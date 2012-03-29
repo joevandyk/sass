@@ -173,7 +173,7 @@ module Sass::Script
 
     # Constructs an RGB or HSL color object,
     # optionally with an alpha channel.
-    # 
+    #
     # The RGB values must be between 0 and 255.
     # The saturation and lightness values must be between 0 and 100.
     # The alpha value must be between 0 and 1.
@@ -498,8 +498,6 @@ module Sass::Script
     # @return [String] The string representation
     def to_s(opts = {})
       return rgba_str if alpha?
-      return smallest if options[:style] == :compressed
-      return COLOR_NAMES_REVERSE[rgb] if COLOR_NAMES_REVERSE[rgb]
       hex_str
     end
     alias_method :to_sass, :to_s
@@ -533,7 +531,7 @@ module Sass::Script
     def piecewise(other, operation)
       other_num = other.is_a? Number
       if other_num && !other.unitless?
-        raise Sass::SyntaxError.new("Cannot add a number with units (#{other}) to a color (#{self}).") 
+        raise Sass::SyntaxError.new("Cannot add a number with units (#{other}) to a color (#{self}).")
       end
 
       result = []
