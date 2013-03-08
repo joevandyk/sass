@@ -24,7 +24,7 @@ end
 # Don't use Rake::GemPackageTast because we want prerequisites to run
 # before we load the gemspec.
 desc "Build all the packages."
-task :package => [:revision_file, :submodules, :permissions] do
+task :package => [:revision_file, :date_file, :submodules, :permissions] do
   version = get_version
   File.open(scope('VERSION'), 'w') {|f| f.puts(version)}
   load scope('sass.gemspec')
@@ -51,7 +51,7 @@ task :permissions do
 end
 
 task :revision_file do
-  require 'lib/sass'
+  require scope('lib/sass')
 
   release = Rake.application.top_level_tasks.include?('release') || File.exist?(scope('EDGE_GEM_VERSION'))
   if Sass.version[:rev] && !release
@@ -63,8 +63,17 @@ task :revision_file do
   end
 end
 
+task :date_file do
+  File.open(scope('VERSION_DATE'), 'w') do |f|
+    f.puts Time.now.utc.strftime('%d %B %Y %T %Z')
+  end
+end
+
 # We also need to get rid of this file after packaging.
-at_exit { File.delete(scope('REVISION')) rescue nil }
+at_exit do
+  File.delete(scope('REVISION')) rescue nil
+  File.delete(scope('VERSION_DATE')) rescue nil
+end
 
 desc "Install Sass as a gem. Use SUDO=1 to install with sudo."
 task :install => [:package] do
@@ -115,9 +124,9 @@ task :submodules do
   if File.exist?(File.dirname(__FILE__) + "/.git")
     sh %{git submodule sync}
     sh %{git submodule update --init}
-  elsif !File.exist?(File.dirname(__FILE__) + "/vendor/fssm/lib")
+  elsif !File.exist?(File.dirname(__FILE__) + "/vendor/listen/lib")
     warn <<WARN
-WARNING: vendor/fssm doesn't exist, and this isn't a git repository so
+WARNING: vendor/listen doesn't exist, and this isn't a git repository so
 I can't get it automatically!
 WARN
   end
@@ -147,7 +156,7 @@ def get_version
   version.map! {|n| n =~ /^[0-9]+$/ ? n.to_i : n}
   return written_version unless version.size == 5 && version[3] == "alpha" # prerelease
 
-  return written_version if (commit_count = `git log --pretty=oneline --first-parent stable.. | wc -l`).empty?
+  return written_version if (commit_count = `git log --pretty=oneline HEAD ^stable | wc -l`).empty?
   version[4] = commit_count.strip
   version.join('.')
 end
@@ -194,7 +203,6 @@ OPTS
     t.files = FileList.new(scope('lib/**/*.rb')) do |list|
       list.exclude('lib/sass/plugin/merb.rb')
       list.exclude('lib/sass/plugin/rails.rb')
-      list.exclude('lib/sass/less.rb')
     end.to_a
     t.options << '--incremental' if Rake.application.top_level_tasks.include?('redoc')
     t.options += FileList.new(scope('yard/*.rb')).to_a.map {|f| ['-e', f]}.flatten

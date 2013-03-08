@@ -59,22 +59,22 @@ class Sass::Tree::Visitors::ToCss < Sass::Tree::Visitors::Base
     return if node.invisible?
     spaces = ('  ' * [@tabs - node.resolved_value[/^ */].size, 0].max)
 
-    content = node.resolved_value.gsub(/^/, spaces).gsub(%r{^(\s*)//(.*)$}) do |md|
-      "#{$1}/*#{$2} */"
-    end
+    content = node.resolved_value.gsub(/^/, spaces)
+    content.gsub!(%r{^(\s*)//(.*)$}) {|md| "#{$1}/*#{$2} */"} if node.type == :silent
     content.gsub!(/\n +(\* *(?!\/))?/, ' ') if (node.style == :compact || node.style == :compressed) && node.type != :loud
     content
   end
 
   def visit_directive(node)
     was_in_directive = @in_directive
-    return node.resolved_value + ";" unless node.has_children
-    return node.resolved_value + " {}" if node.children.empty?
+    tab_str = '  ' * @tabs
+    return tab_str + node.resolved_value + ";" unless node.has_children
+    return tab_str + node.resolved_value + " {}" if node.children.empty?
     @in_directive = @in_directive || !node.is_a?(Sass::Tree::MediaNode)
     result = if node.style == :compressed
                "#{node.resolved_value}{"
              else
-               "#{'  ' * @tabs}#{node.resolved_value} {" + (node.style == :compact ? ' ' : "\n")
+               "#{tab_str}#{node.resolved_value} {" + (node.style == :compact ? ' ' : "\n")
              end
     was_prop = false
     first = true
@@ -122,6 +122,7 @@ class Sass::Tree::Visitors::ToCss < Sass::Tree::Visitors::Base
   end
 
   def visit_prop(node)
+    return if node.resolved_value.empty?
     tab_str = '  ' * (@tabs + node.tabs)
     if node.style == :compressed
       "#{tab_str}#{node.resolved_name}:#{node.resolved_value}"
@@ -212,7 +213,8 @@ class Sass::Tree::Visitors::ToCss < Sass::Tree::Visitors::Base
       rule.resolved_rules = Sass::Selector::CommaSequence.new(
         [Sass::Selector::Sequence.new(
             [Sass::Selector::SimpleSequence.new(
-                [Sass::Selector::Element.new(k.to_s.gsub(/[^\w-]/, "\\\\\\0"), nil)])
+                [Sass::Selector::Element.new(k.to_s.gsub(/[^\w-]/, "\\\\\\0"), nil)],
+                false)
             ])
         ])
       prop = Sass::Tree::PropNode.new([""], Sass::Script::String.new(''), :new)

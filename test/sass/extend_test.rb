@@ -152,7 +152,10 @@ SCSS
   def test_id_unification
     assert_unification '.foo.bar', '#baz {@extend .foo}', '.foo.bar, .bar#baz'
     assert_unification '.foo#baz', '#baz {@extend .foo}', '#baz'
-    assert_unification '.foo#baz', '#bar {@extend .foo}', '.foo#baz'
+
+    assert_extend_doesnt_match('#bar', '.foo', :failed_to_unify, 2) do
+      assert_unification '.foo#baz', '#bar {@extend .foo}', '.foo#baz'
+    end
   end
 
   def test_universal_unification_with_simple_target
@@ -175,7 +178,11 @@ SCSS
   def test_universal_unification_with_namespaced_universal_target
     assert_unification 'ns|*.foo', '* {@extend .foo}', 'ns|*'
     assert_unification 'ns|*.foo', '*|* {@extend .foo}', 'ns|*'
-    assert_unification 'ns1|*.foo', 'ns2|* {@extend .foo}', 'ns1|*.foo'
+
+    assert_extend_doesnt_match('ns2|*', '.foo', :failed_to_unify, 2) do
+      assert_unification 'ns1|*.foo', 'ns2|* {@extend .foo}', 'ns1|*.foo'
+    end
+
     assert_unification 'ns|*.foo', 'ns|* {@extend .foo}', 'ns|*'
   end
 
@@ -191,7 +198,11 @@ SCSS
   def test_universal_unification_with_namespaced_element_target
     assert_unification 'ns|a.foo', '* {@extend .foo}', 'ns|a'
     assert_unification 'ns|a.foo', '*|* {@extend .foo}', 'ns|a'
-    assert_unification 'ns1|a.foo', 'ns2|* {@extend .foo}', 'ns1|a.foo'
+
+    assert_extend_doesnt_match('ns2|*', '.foo', :failed_to_unify, 2) do
+      assert_unification 'ns1|a.foo', 'ns2|* {@extend .foo}', 'ns1|a.foo'
+    end
+
     assert_unification 'ns|a.foo', 'ns|* {@extend .foo}', 'ns|a'
   end
 
@@ -214,7 +225,11 @@ SCSS
   def test_element_unification_with_namespaced_universal_target
     assert_unification 'ns|*.foo', 'a {@extend .foo}', 'ns|*.foo, ns|a'
     assert_unification 'ns|*.foo', '*|a {@extend .foo}', 'ns|*.foo, ns|a'
-    assert_unification 'ns1|*.foo', 'ns2|a {@extend .foo}', 'ns1|*.foo'
+
+    assert_extend_doesnt_match('ns2|a', '.foo', :failed_to_unify, 2) do
+      assert_unification 'ns1|*.foo', 'ns2|a {@extend .foo}', 'ns1|*.foo'
+    end
+
     assert_unification 'ns|*.foo', 'ns|a {@extend .foo}', 'ns|*.foo, ns|a'
   end
 
@@ -225,13 +240,20 @@ SCSS
     assert_unification '*|a.foo', '*|a {@extend .foo}', '*|a'
     assert_unification 'a.foo', 'ns|a {@extend .foo}', 'a.foo, ns|a'
     assert_unification '*|a.foo', 'ns|a {@extend .foo}', '*|a.foo, ns|a'
-    assert_unification 'a.foo', 'h1 {@extend .foo}', 'a.foo'
+
+    assert_extend_doesnt_match('h1', '.foo', :failed_to_unify, 2) do
+      assert_unification 'a.foo', 'h1 {@extend .foo}', 'a.foo'
+    end
   end
 
   def test_element_unification_with_namespaced_element_target
     assert_unification 'ns|a.foo', 'a {@extend .foo}', 'ns|a'
     assert_unification 'ns|a.foo', '*|a {@extend .foo}', 'ns|a'
-    assert_unification 'ns1|a.foo', 'ns2|a {@extend .foo}', 'ns1|a.foo'
+
+    assert_extend_doesnt_match('ns2|a', '.foo', :failed_to_unify, 2) do
+      assert_unification 'ns1|a.foo', 'ns2|a {@extend .foo}', 'ns1|a.foo'
+    end
+
     assert_unification 'ns|a.foo', 'ns|a {@extend .foo}', 'ns|a'
   end
 
@@ -246,8 +268,15 @@ SCSS
   def test_pseudo_unification
     assert_unification ':foo.baz', ':foo(2n+1) {@extend .baz}', ':foo.baz, :foo:foo(2n+1)'
     assert_unification ':foo.baz', '::foo {@extend .baz}', ':foo.baz, :foo::foo'
-    assert_unification '::foo.baz', '::bar {@extend .baz}', '::foo.baz'
-    assert_unification '::foo.baz', '::foo(2n+1) {@extend .baz}', '::foo.baz'
+
+    assert_extend_doesnt_match('::bar', '.baz', :failed_to_unify, 2) do
+      assert_unification '::foo.baz', '::bar {@extend .baz}', '::foo.baz'
+    end
+
+    assert_extend_doesnt_match('::foo(2n+1)', '.baz', :failed_to_unify, 2) do
+      assert_unification '::foo.baz', '::foo(2n+1) {@extend .baz}', '::foo.baz'
+    end
+
     assert_unification '::foo.baz', '::foo {@extend .baz}', '::foo'
     assert_unification '::foo(2n+1).baz', '::foo(2n+1) {@extend .baz}', '::foo(2n+1)'
     assert_unification ':foo.baz', ':bar {@extend .baz}', ':foo.baz, :foo:bar'
@@ -318,7 +347,9 @@ SCSS
   end
 
   def test_long_extendee_requires_all_selectors
-    assert_extends '.foo', '.baz {@extend .foo.bar}', '.foo'
+    assert_extend_doesnt_match('.baz', '.foo.bar', :not_found, 2) do
+      assert_extends '.foo', '.baz {@extend .foo.bar}', '.foo'
+    end
   end
 
   def test_long_extendee_matches_supersets
@@ -340,8 +371,13 @@ SCSS
   end
 
   def test_long_extender_aborts_unification
-    assert_extends 'a.foo#bar', 'h1.baz {@extend .foo}', 'a.foo#bar'
-    assert_extends 'a.foo#bar', '.bang#baz {@extend .foo}', 'a.foo#bar'
+    assert_extend_doesnt_match('h1.baz', '.foo', :failed_to_unify, 2) do
+      assert_extends 'a.foo#bar', 'h1.baz {@extend .foo}', 'a.foo#bar'
+    end
+
+    assert_extend_doesnt_match('.bang#baz', '.foo', :failed_to_unify, 2) do
+      assert_extends 'a.foo#bar', '.bang#baz {@extend .foo}', 'a.foo#bar'
+    end
   end
 
   ## Nested Extenders
@@ -355,7 +391,9 @@ SCSS
   end
 
   def test_nested_extender_aborts_unification
-    assert_extends 'baz.foo', 'foo bar {@extend .foo}', 'baz.foo'
+    assert_extend_doesnt_match('foo bar', '.foo', :failed_to_unify, 2) do
+      assert_extends 'baz.foo', 'foo bar {@extend .foo}', 'baz.foo'
+    end
   end
 
   def test_nested_extender_alternates_parents
@@ -414,6 +452,12 @@ SCSS
     assert_extends 'a ~ b c .c1', 'b c .c2 {@extend .c1}', 'a ~ b c .c1, a ~ b c .c2'
   end
 
+  def test_nested_extender_doesnt_find_common_selectors_around_reference_selector
+    assert_extends 'a /for/ b c .c1', 'a c .c2 {@extend .c1}', 'a /for/ b c .c1, a /for/ b a c .c2, a a /for/ b c .c2'
+    assert_extends 'a /for/ b c .c1', 'a b .c2 {@extend .c1}', 'a /for/ b c .c1, a a /for/ b c .c2'
+    assert_extends 'a /for/ b c .c1', 'b c .c2 {@extend .c1}', 'a /for/ b c .c1, a /for/ b c .c2'
+  end
+
   def test_nested_extender_with_early_child_selectors_doesnt_subseq_them
     assert_extends('.bip > .bap .foo', '.grip > .bap .bar {@extend .foo}',
       '.bip > .bap .foo, .bip > .bap .grip > .bap .bar, .grip > .bap .bip > .bap .bar')
@@ -443,7 +487,9 @@ CSS
   > .baz {@extend .bar}
 }
 SCSS
+  end
 
+  def test_nested_extender_with_early_child_selectors_doesnt_subseq_them
     assert_equal <<CSS, render(<<SCSS)
 .foo .bar, .foo .bip > .baz {
   a: b; }
@@ -763,7 +809,8 @@ SCSS
   end
 
   def test_placeholder_selector_as_modifier
-    assert_equal <<CSS, render(<<SCSS)
+    assert_extend_doesnt_match('div', '%foo', :failed_to_unify, 3) do
+      assert_equal <<CSS, render(<<SCSS)
 a.baz.bar {
   color: blue; }
 CSS
@@ -771,6 +818,7 @@ a%foo.baz {color: blue}
 .bar {@extend %foo}
 div {@extend %foo}
 SCSS
+    end
   end
 
   def test_placeholder_interpolation
@@ -795,7 +843,377 @@ CSS
 SCSS
   end
 
+  def test_extend_out_of_media
+    assert_warning(<<WARN) {assert_equal(<<CSS, render(<<SCSS))}
+DEPRECATION WARNING on line 3 of test_extend_out_of_media_inline.scss:
+  @extending an outer selector from within @media is deprecated.
+  You may only @extend selectors within the same directive.
+  This will be an error in Sass 3.3.
+  It can only work once @extend is supported natively in the browser.
+WARN
+.foo {
+  a: b; }
+CSS
+.foo {a: b}
+@media screen {
+  .bar {@extend .foo}
+}
+SCSS
+  end
+
+  def test_extend_out_of_unknown_directive
+    assert_warning(<<WARN) {assert_equal(<<CSS, render(<<SCSS))}
+DEPRECATION WARNING on line 3 of test_extend_out_of_unknown_directive_inline.scss:
+  @extending an outer selector from within @flooblehoof is deprecated.
+  You may only @extend selectors within the same directive.
+  This will be an error in Sass 3.3.
+  It can only work once @extend is supported natively in the browser.
+WARN
+.foo {
+  a: b; }
+
+@flooblehoof {}
+CSS
+.foo {a: b}
+@flooblehoof {
+  .bar {@extend .foo}
+}
+SCSS
+  end
+
+  def test_extend_out_of_nested_directives
+    assert_warning(<<WARN) {assert_equal(<<CSS, render(<<SCSS))}
+DEPRECATION WARNING on line 4 of test_extend_out_of_nested_directives_inline.scss:
+  @extending an outer selector from within @flooblehoof is deprecated.
+  You may only @extend selectors within the same directive.
+  This will be an error in Sass 3.3.
+  It can only work once @extend is supported natively in the browser.
+WARN
+@media screen {
+  .foo {
+    a: b; }
+
+  @flooblehoof {} }
+CSS
+@media screen {
+  .foo {a: b}
+  @flooblehoof {
+    .bar {@extend .foo}
+  }
+}
+SCSS
+  end
+
+  def test_extend_within_media
+    assert_equal(<<CSS, render(<<SCSS))
+@media screen {
+  .foo, .bar {
+    a: b; } }
+CSS
+@media screen {
+  .foo {a: b}
+  .bar {@extend .foo}
+}
+SCSS
+  end
+
+  def test_extend_within_unknown_directive
+    assert_equal(<<CSS, render(<<SCSS))
+@flooblehoof {
+  .foo, .bar {
+    a: b; } }
+CSS
+@flooblehoof {
+  .foo {a: b}
+  .bar {@extend .foo}
+}
+SCSS
+  end
+
+  def test_extend_within_nested_directives
+    assert_equal(<<CSS, render(<<SCSS))
+@media screen {
+  @flooblehoof {
+    .foo, .bar {
+      a: b; } } }
+CSS
+@media screen {
+  @flooblehoof {
+    .foo {a: b}
+    .bar {@extend .foo}
+  }
+}
+SCSS
+  end
+
+  def test_extend_within_disparate_media
+    assert_equal(<<CSS, render(<<SCSS))
+@media screen {
+  .foo, .bar {
+    a: b; } }
+CSS
+@media screen {.foo {a: b}}
+@media screen {.bar {@extend .foo}}
+SCSS
+  end
+
+  def test_extend_within_disparate_unknown_directive
+    assert_equal(<<CSS, render(<<SCSS))
+@flooblehoof {
+  .foo, .bar {
+    a: b; } }
+
+@flooblehoof {}
+CSS
+@flooblehoof {.foo {a: b}}
+@flooblehoof {.bar {@extend .foo}}
+SCSS
+  end
+
+  def test_extend_within_disparate_nested_directives
+    assert_equal(<<CSS, render(<<SCSS))
+@media screen {
+  @flooblehoof {
+    .foo, .bar {
+      a: b; } } }
+@media screen {
+  @flooblehoof {} }
+CSS
+@media screen {@flooblehoof {.foo {a: b}}}
+@media screen {@flooblehoof {.bar {@extend .foo}}}
+SCSS
+  end
+
+  def test_extend_within_and_without_media
+    assert_warning(<<WARN) {assert_equal(<<CSS, render(<<SCSS))}
+DEPRECATION WARNING on line 4 of test_extend_within_and_without_media_inline.scss:
+  @extending an outer selector from within @media is deprecated.
+  You may only @extend selectors within the same directive.
+  This will be an error in Sass 3.3.
+  It can only work once @extend is supported natively in the browser.
+WARN
+.foo {
+  a: b; }
+
+@media screen {
+  .foo, .bar {
+    c: d; } }
+CSS
+.foo {a: b}
+@media screen {
+  .foo {c: d}
+  .bar {@extend .foo}
+}
+SCSS
+  end
+
+  def test_extend_within_and_without_unknown_directive
+    assert_warning(<<WARN) {assert_equal(<<CSS, render(<<SCSS))}
+DEPRECATION WARNING on line 4 of test_extend_within_and_without_unknown_directive_inline.scss:
+  @extending an outer selector from within @flooblehoof is deprecated.
+  You may only @extend selectors within the same directive.
+  This will be an error in Sass 3.3.
+  It can only work once @extend is supported natively in the browser.
+WARN
+.foo {
+  a: b; }
+
+@flooblehoof {
+  .foo, .bar {
+    c: d; } }
+CSS
+.foo {a: b}
+@flooblehoof {
+  .foo {c: d}
+  .bar {@extend .foo}
+}
+SCSS
+  end
+
+  def test_extend_within_and_without_nested_directives
+    assert_warning(<<WARN) {assert_equal(<<CSS, render(<<SCSS))}
+DEPRECATION WARNING on line 5 of test_extend_within_and_without_nested_directives_inline.scss:
+  @extending an outer selector from within @flooblehoof is deprecated.
+  You may only @extend selectors within the same directive.
+  This will be an error in Sass 3.3.
+  It can only work once @extend is supported natively in the browser.
+WARN
+@media screen {
+  .foo {
+    a: b; }
+
+  @flooblehoof {
+    .foo, .bar {
+      c: d; } } }
+CSS
+@media screen {
+  .foo {a: b}
+  @flooblehoof {
+    .foo {c: d}
+    .bar {@extend .foo}
+  }
+}
+SCSS
+  end
+
+  def test_extend_with_subject_transfers_subject_to_extender
+    assert_equal(<<CSS, render(<<SCSS))
+foo bar! baz, foo .bip .bap! baz, .bip foo .bap! baz {
+  a: b; }
+CSS
+foo bar! baz {a: b}
+.bip .bap {@extend bar}
+SCSS
+
+    assert_equal(<<CSS, render(<<SCSS))
+foo.x bar.y! baz.z, foo.x .bip bar.bap! baz.z, .bip foo.x bar.bap! baz.z {
+  a: b; }
+CSS
+foo.x bar.y! baz.z {a: b}
+.bip .bap {@extend .y}
+SCSS
+  end
+
+  def test_extend_with_subject_retains_subject_on_target
+    assert_equal(<<CSS, render(<<SCSS))
+.foo! .bar, .foo! .bip .bap, .bip .foo! .bap {
+  a: b; }
+CSS
+.foo! .bar {a: b}
+.bip .bap {@extend .bar}
+SCSS
+  end
+
+  def test_extend_with_subject_transfers_subject_to_target
+    assert_equal(<<CSS, render(<<SCSS))
+a.foo .bar, .bip a.bap! .bar {
+  a: b; }
+CSS
+a.foo .bar {a: b}
+.bip .bap! {@extend .foo}
+SCSS
+  end
+
+  def test_extend_with_subject_retains_subject_on_extender
+    assert_equal(<<CSS, render(<<SCSS))
+.foo .bar, .foo .bip! .bap, .bip! .foo .bap {
+  a: b; }
+CSS
+.foo .bar {a: b}
+.bip! .bap {@extend .bar}
+SCSS
+  end
+
+  def test_extend_with_subject_fails_with_conflicting_subject
+    assert_equal(<<CSS, render(<<SCSS))
+x! .bar {
+  a: b; }
+CSS
+x! .bar {a: b}
+y! .bap {@extend .bar}
+SCSS
+end
+
+  def test_extend_warns_when_extendee_doesnt_exist
+    assert_warning(<<WARN) {assert_equal("", render(<<SCSS))}
+WARNING on line 1 of test_extend_warns_when_extendee_doesnt_exist_inline.scss: ".foo" failed to @extend ".bar".
+  The selector ".bar" was not found.
+  This will be an error in future releases of Sass.
+  Use "@extend .bar !optional" if the extend should be able to fail.
+WARN
+.foo {@extend .bar}
+SCSS
+  end
+
+  def test_extend_warns_when_extension_fails
+    assert_warning(<<WARN) {assert_equal(<<CSS, render(<<SCSS))}
+WARNING on line 2 of test_extend_warns_when_extension_fails_inline.scss: "b.foo" failed to @extend ".bar".
+  No selectors matching ".bar" could be unified with "b.foo".
+  This will be an error in future releases of Sass.
+  Use "@extend .bar !optional" if the extend should be able to fail.
+WARN
+a.bar {
+  a: b; }
+CSS
+a.bar {a: b}
+b.foo {@extend .bar}
+SCSS
+  end
+
+  def test_extend_does_not_warn_when_one_extension_fails_but_others_dont
+    assert_no_warning {assert_equal(<<CSS, render(<<SCSS))}
+a.bar {
+  a: b; }
+
+.bar, b.foo {
+  c: d; }
+CSS
+a.bar {a: b}
+.bar {c: d}
+b.foo {@extend .bar}
+SCSS
+  end
+
+  def test_extend_does_not_warn_when_one_extension_fails_but_others_dont
+    assert_no_warning {assert_equal(<<CSS, render(<<SCSS))}
+a.bar {
+  a: b; }
+
+.bar, b.foo {
+  c: d; }
+CSS
+a.bar {a: b}
+.bar {c: d}
+b.foo {@extend .bar}
+SCSS
+  end
+
+  def test_optional_extend_does_not_warn_when_extendee_doesnt_exist
+    assert_no_warning {assert_equal("", render(<<SCSS))}
+.foo {@extend .bar !optional}
+SCSS
+  end
+
+  def test_optional_extend_does_not_warn_when_extension_fails
+    assert_no_warning {assert_equal(<<CSS, render(<<SCSS))}
+a.bar {
+  a: b; }
+CSS
+a.bar {a: b}
+b.foo {@extend .bar !optional}
+SCSS
+  end
+
   # Regression Tests
+
+  def test_extend_in_double_nested_media_query
+    assert_equal <<CSS, render(<<SCSS)
+@media all and (orientation: landscape) {
+  .bar {
+    color: blue; } }
+CSS
+@media all {
+  @media (orientation: landscape) {
+    %foo {color: blue}
+    .bar {@extend %foo}
+  }
+}
+SCSS
+  end
+
+  def test_partially_failed_extend
+    assert_no_warning {assert_equal(<<CSS, render(<<SCSS))}
+.rc, test {
+  color: white; }
+
+.prices span.pill span.rc {
+  color: red; }
+CSS
+test { @extend .rc; }
+.rc {color: white;}
+.prices span.pill span.rc {color: red;}
+SCSS
+  end
 
   def test_newline_near_combinator
     assert_equal <<CSS, render(<<SCSS)
@@ -905,6 +1323,23 @@ SCSS
 
   private
 
+  def assert_extend_doesnt_match(extender, target, reason, line, syntax = :scss)
+    warn = "\"#{extender}\" failed to @extend \"#{target}\"."
+    reason = 
+      if reason == :not_found
+        "The selector \"#{target}\" was not found."
+      else
+        "No selectors matching \"#{target}\" could be unified with \"#{extender}\"."
+      end
+
+    assert_warning(<<WARNING) {yield}
+WARNING on line #{line} of #{filename_for_test syntax}: #{warn}
+  #{reason}
+  This will be an error in future releases of Sass.
+  Use "@extend #{target} !optional" if the extend should be able to fail.
+WARNING
+  end
+
   def assert_unification(selector, extension, unified)
     # Do some trickery so the first law of extend doesn't get in our way.
     assert_extends(
@@ -924,7 +1359,8 @@ SCSS
   end
 
   def render(sass, options = {})
+    options = {:syntax => :scss}.merge(options)
     munge_filename options
-    Sass::Engine.new(sass, {:syntax => :scss}.merge(options)).render
+    Sass::Engine.new(sass, options).render
   end
 end

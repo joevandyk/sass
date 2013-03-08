@@ -26,6 +26,9 @@ module Sass
       # @return {Set<Sequence>}
       attr_accessor :sources
 
+      # @see \{#subject?}
+      attr_writer :subject
+
       # Returns the element or universal selector in this sequence,
       # if it exists.
       #
@@ -41,10 +44,21 @@ module Sass
         @rest ||= Set.new(base ? members[1..-1] : members)
       end
 
+      # Whether or not this compound selector is the subject of the parent
+      # selector; that is, whether it is prepended with `$` and represents the
+      # actual element that will be selected.
+      #
+      # @return [Boolean]
+      def subject?
+        @subject
+      end
+
       # @param selectors [Array<Simple>] See \{#members}
+      # @param subject [Boolean] See \{#subject?}
       # @param sources [Set<Sequence>]
-      def initialize(selectors, sources = Set.new)
+      def initialize(selectors, subject, sources = Set.new)
         @members = selectors
+        @subject = subject
         @sources = sources
       end
 
@@ -66,31 +80,37 @@ module Sass
         end
 
         super_seq.members[0...-1] +
-          [SimpleSequence.new(super_seq.members.last.members + @members[1..-1])]
+          [SimpleSequence.new(super_seq.members.last.members + @members[1..-1], subject?)]
       end
 
       # Non-destrucively extends this selector with the extensions specified in a hash
       # (which should come from {Sass::Tree::Visitors::Cssize}).
       #
-      # @overload def do_extend(extends, sources)
-      # @param extends [{Selector::Simple => Selector::Sequence}]
+      # @overload def do_extend(extends, parent_directives)
+      # @param extends [{Selector::Simple =>
+      #                  Sass::Tree::Visitors::Cssize::Extend}]
       #   The extensions to perform on this selector
+      # @param parent_directives [Array<Sass::Tree::DirectiveNode>]
+      #   The directives containing this selector.
       # @return [Array<Sequence>] A list of selectors generated
       #   by extending this selector with `extends`.
       # @see CommaSequence#do_extend
-      def do_extend(extends, seen = Set.new)
-        Sass::Util.group_by_to_a(extends.get(members.to_set)) {|seq, _| seq}.map do |seq, group|
+      def do_extend(extends, parent_directives, seen = Set.new)
+        Sass::Util.group_by_to_a(extends.get(members.to_set)) {|ex, _| ex.extender}.map do |seq, group|
           sels = group.map {|_, s| s}.flatten
           # If A {@extend B} and C {...},
           # seq is A, sels is B, and self is C
 
-          self_without_sel = self.members - sels
-          next unless unified = seq.members.last.unify(self_without_sel)
+          self_without_sel = Sass::Util.array_minus(self.members, sels)
+          group.each {|e, _| e.result = :failed_to_unify unless e.result == :succeeded}
+          next unless unified = seq.members.last.unify(self_without_sel, subject?)
+          group.each {|e, _| e.result = :succeeded}
+          next if group.map {|e, _| check_directives_match!(e, parent_directives)}.none?
           new_seq = Sequence.new(seq.members[0...-1] + [unified])
           new_seq.add_sources!(sources + [seq])
           [sels, new_seq]
         end.compact.map do |sels, seq|
-          seen.include?(sels) ? [] : seq.do_extend(extends, seen + [sels])
+          seen.include?(sels) ? [] : seq.do_extend(extends, parent_directives, seen + [sels])
         end.flatten.uniq
       end
 
@@ -99,6 +119,7 @@ module Sass
       # that matches both this selector and the input selector.
       #
       # @param sels [Array<Simple>] A {SimpleSequence}'s {SimpleSequence#members members array}
+      # @param subject [Boolean] Whether the {SimpleSequence} being merged is a subject.
       # @return [SimpleSequence, nil] A {SimpleSequence} matching both `sels` and this selector,
       #   or `nil` if this is impossible (e.g. unifying `#foo` and `#bar`)
       # @raise [Sass::SyntaxError] If this selector cannot be unified.
@@ -107,12 +128,12 @@ module Sass
       #   Since these selectors should be resolved
       #   by the time extension and unification happen,
       #   this exception will only ever be raised as a result of programmer error
-      def unify(sels)
+      def unify(sels, other_subject)
         return unless sseq = members.inject(sels) do |sseq, sel|
           return unless sseq
           sel.unify(sseq)
         end
-        SimpleSequence.new(sseq)
+        SimpleSequence.new(sseq, other_subject || subject?)
       end
 
       # Returns whether or not this selector matches all elements
@@ -129,7 +150,9 @@ module Sass
 
       # @see Simple#to_a
       def to_a
-        @members.map {|sel| sel.to_a}.flatten
+        res = @members.map {|sel| sel.to_a}.flatten
+        res << '!' if subject?
+        res
       end
 
       # Returns a string representation of the sequence.
@@ -154,12 +177,28 @@ module Sass
 
       private
 
+      def check_directives_match!(extend, parent_directives)
+        dirs1 = extend.directives.map {|d| d.resolved_value}
+        dirs2 = parent_directives.map {|d| d.resolved_value}
+        return true if Sass::Util.subsequence?(dirs1, dirs2)
+
+        Sass::Util.sass_warn <<WARNING
+DEPRECATION WARNING on line #{extend.node.line}#{" of #{extend.node.filename}" if extend.node.filename}:
+  @extending an outer selector from within #{extend.directives.last.name} is deprecated.
+  You may only @extend selectors within the same directive.
+  This will be an error in Sass 3.3.
+  It can only work once @extend is supported natively in the browser.
+WARNING
+        return false
+      end
+
       def _hash
         [base, Sass::Util.set_hash(rest)].hash
       end
 
       def _eql?(other)
-        other.base.eql?(self.base) && Sass::Util.set_eql?(other.rest, self.rest)
+        other.base.eql?(self.base) && Sass::Util.set_eql?(other.rest, self.rest) &&
+          other.subject? == self.subject?
       end
     end
   end

@@ -24,17 +24,16 @@ module Sass
         filename
       end
 
-      # The array of {SimpleSequence simple selector sequences}, operators, and newlines.
-      # The operators are strings such as `"+"` and `">"`
-      # representing the corresponding CSS operators.
-      # Newlines are also newline strings;
-      # these aren't semantically relevant,
-      # but they do affect formatting.
+      # The array of {SimpleSequence simple selector sequences}, operators, and
+      # newlines. The operators are strings such as `"+"` and `">"` representing
+      # the corresponding CSS operators, or interpolated SassScript. Newlines
+      # are also newline strings; these aren't semantically relevant, but they
+      # do affect formatting.
       #
-      # @return [Array<SimpleSequence, String>]
+      # @return [Array<SimpleSequence, String|Array<Sass::Tree::Node, String>>]
       attr_reader :members
 
-      # @param seqs_and_ops [Array<SimpleSequence, String>] See \{#members}
+      # @param seqs_and_ops [Array<SimpleSequence, String|Array<Sass::Tree::Node, String>>] See \{#members}
       def initialize(seqs_and_ops)
         @members = seqs_and_ops
       end
@@ -47,15 +46,15 @@ module Sass
       # @return [Sequence] This selector, with parent references resolved
       # @raise [Sass::SyntaxError] If a parent selector is invalid
       def resolve_parent_refs(super_seq)
-        members = @members
+        members = @members.dup
         nl = (members.first == "\n" && members.shift)
         unless members.any? do |seq_or_op|
             seq_or_op.is_a?(SimpleSequence) && seq_or_op.members.first.is_a?(Parent)
           end
-          members = []
+          old_members, members = members, []
           members << nl if nl
-          members << SimpleSequence.new([Parent.new])
-          members += @members
+          members << SimpleSequence.new([Parent.new], false)
+          members += old_members
         end
 
         Sequence.new(
@@ -68,17 +67,20 @@ module Sass
       # Non-destructively extends this selector with the extensions specified in a hash
       # (which should come from {Sass::Tree::Visitors::Cssize}).
       #
-      # @overload def do_extend(extends)
-      # @param extends [Sass::Util::SubsetMap{Selector::Simple => Selector::Sequence}]
+      # @overload def do_extend(extends, parent_directives)
+      # @param extends [Sass::Util::SubsetMap{Selector::Simple =>
+      #                                       Sass::Tree::Visitors::Cssize::Extend}]
       #   The extensions to perform on this selector
+      # @param parent_directives [Array<Sass::Tree::DirectiveNode>]
+      #   The directives containing this selector.
       # @return [Array<Sequence>] A list of selectors generated
       #   by extending this selector with `extends`.
       #   These correspond to a {CommaSequence}'s {CommaSequence#members members array}.
       # @see CommaSequence#do_extend
-      def do_extend(extends, seen = Set.new)
+      def do_extend(extends, parent_directives, seen = Set.new)
         extended_not_expanded = members.map do |sseq_or_op|
           next [[sseq_or_op]] unless sseq_or_op.is_a?(SimpleSequence)
-          extended = sseq_or_op.do_extend(extends, seen)
+          extended = sseq_or_op.do_extend(extends, parent_directives, seen)
           choices = extended.map {|seq| seq.members}
           choices.unshift([sseq_or_op]) unless extended.any? {|seq| seq.superselector?(sseq_or_op)}
           choices
@@ -195,7 +197,7 @@ module Sass
         diff += fin.map {|sel| sel.is_a?(Array) ? sel : [sel]}
         diff.reject! {|c| c.empty?}
 
-        Sass::Util.paths(diff).map {|p| p.flatten}
+        Sass::Util.paths(diff).map {|p| p.flatten}.reject {|p| path_has_two_subjects?(p)}
       end
 
       # Extracts initial selector combinators (`"+"`, `">"`, `"~"`, and `"\n"`)
@@ -269,7 +271,7 @@ module Sass
             elsif sel2.superselector?(sel1)
               res.unshift sel1, '~'
             else
-              merged = sel1.unify(sel2.members)
+              merged = sel1.unify(sel2.members, sel2.subject?)
               res.unshift [
                 [sel1, '~', sel2, '~'],
                 [sel2, '~', sel1, '~'],
@@ -286,7 +288,7 @@ module Sass
             if tilde_sel.superselector?(plus_sel)
               res.unshift plus_sel, '+'
             else
-              merged = plus_sel.unify(tilde_sel.members)
+              merged = plus_sel.unify(tilde_sel.members, tilde_sel.subject?)
               res.unshift [
                 [tilde_sel, '~', plus_sel, '+'],
                 ([merged, '+'] if merged)
@@ -299,7 +301,7 @@ module Sass
             res.unshift sel1, op1
             seq2.push sel2, op2
           elsif op1 == op2
-            return unless merged = sel1.unify(sel2.members)
+            return unless merged = sel1.unify(sel2.members, sel2.subject?)
             res.unshift merged, op1
           else
             # Unknown selector combinators can't be unified
@@ -419,7 +421,7 @@ module Sass
       # @param seq2 [Array<SimpleSequence or String>]
       # @return [Boolean]
       def parent_superselector?(seq1, seq2)
-        base = Sass::Selector::SimpleSequence.new([Sass::Selector::Placeholder.new('<temp>')])
+        base = Sass::Selector::SimpleSequence.new([Sass::Selector::Placeholder.new('<temp>')], false)
         _superselector?(seq1 + [base], seq2 + [base])
       end
 
@@ -435,6 +437,9 @@ module Sass
       # @param seqses [Array<Array<Array<SimpleSequence or String>>>]
       # @return [Array<Array<Array<SimpleSequence or String>>>]
       def trim(seqses)
+        # Avoid truly horrific quadratic behavior. TOOD: I think there
+        # may be a way to get perfect trimming without going quadratic.
+        return seqses if seqses.size > 100
         # This is n^2 on the sequences, but only comparing between
         # separate sequences should limit the quadratic behavior.
         seqses.map do |seqs1|
@@ -463,6 +468,17 @@ module Sass
       end
 
       private
+
+      def path_has_two_subjects?(path)
+        subject = false
+        path.each do |sseq_or_op|
+          next unless sseq_or_op.is_a?(SimpleSequence)
+          next unless sseq_or_op.subject?
+          return true if subject
+          subject = true
+        end
+        false
+      end
 
       def _sources(seq)
         s = Set.new

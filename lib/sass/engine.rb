@@ -29,6 +29,7 @@ require 'sass/tree/charset_node'
 require 'sass/tree/visitors/base'
 require 'sass/tree/visitors/perform'
 require 'sass/tree/visitors/cssize'
+require 'sass/tree/visitors/extend'
 require 'sass/tree/visitors/convert'
 require 'sass/tree/visitors/to_css'
 require 'sass/tree/visitors/deep_copy'
@@ -51,10 +52,13 @@ module Sass
   # `name`: `String`
   # : The name of the mixin/function.
   #
-  # `args`: `Array<(String, Script::Node)>`
+  # `args`: `Array<(Script::Node, Script::Node)>`
   # : The arguments for the mixin/function.
-  #   Each element is a tuple containing the name of the argument
+  #   Each element is a tuple containing the variable node of the argument
   #   and the parse tree for the default value of the argument.
+  #
+  # `splat`: `Script::Node?`
+  # : The variable node of the splat argument for this callable, or null.
   #
   # `environment`: {Sass::Environment}
   # : The environment in which the mixin/function was defined.
@@ -66,7 +70,10 @@ module Sass
   #
   # `has_content`: `Boolean`
   # : Whether the callable accepts a content block.
-  Callable = Struct.new(:name, :args, :environment, :tree, :has_content)
+  #
+  # `type`: `String`
+  # : The user-friendly name of the type of the callable.
+  Callable = Struct.new(:name, :args, :splat, :environment, :tree, :has_content, :type)
 
   # This class handles the parsing and compilation of the Sass template.
   # Example usage:
@@ -286,7 +293,7 @@ module Sass
     # @return [[Sass::Engine]] The dependency documents.
     def dependencies
       _dependencies(Set.new, engines = Set.new)
-      engines - [self]
+      Sass::Util.array_minus(engines, [self])
     end
 
     # Helper for \{#dependencies}.
@@ -372,7 +379,7 @@ module Sass
       comment_tab_str = nil
       first = true
       lines = []
-      string.gsub(/\r|\n|\r\n|\r\n/, "\n").scan(/^[^\n]*?$/).each_with_index do |line, index|
+      string.gsub(/\r\n|\r|\n/, "\n").scan(/^[^\n]*?$/).each_with_index do |line, index|
         index += (@options[:line] || 1)
         if line.strip.empty?
           lines.last.text << "\n" if lines.last && lines.last.comment?
@@ -600,7 +607,14 @@ WARNING
       else
         expr = parse_script(value, :offset => line.offset + line.text.index(value))
       end
-      Tree::PropNode.new(parse_interp(name), expr, prop)
+      node = Tree::PropNode.new(parse_interp(name), expr, prop)
+      if value.strip.empty? && line.children.empty?
+        raise SyntaxError.new(
+          "Invalid property: \"#{node.declaration}\" (no value)." +
+          node.pseudo_class_selector_message)
+      end
+
+      node
     end
 
     def parse_variable(line)
@@ -675,8 +689,9 @@ WARNING
         raise SyntaxError.new("Invalid extend directive '@extend': expected expression.") unless value
         raise SyntaxError.new("Illegal nesting: Nothing may be nested beneath extend directives.",
           :line => @line + 1) unless line.children.empty?
+        optional = !!value.gsub!(/\s+#{Sass::SCSS::RX::OPTIONAL}$/, '')
         offset = line.offset + line.text.index(value).to_i
-        Tree::ExtendNode.new(parse_interp(value, offset))
+        Tree::ExtendNode.new(parse_interp(value, offset), optional)
       when 'warn'
         raise SyntaxError.new("Invalid warn directive '@warn': expected expression.") unless value
         raise SyntaxError.new("Illegal nesting: Nothing may be nested beneath warn directives.",
@@ -697,8 +712,14 @@ WARNING
         Tree::CharsetNode.new(name)
       when 'media'
         parser = Sass::SCSS::Parser.new(value, @options[:filename], @line)
-        Tree::MediaNode.new(parser.parse_media_query_list)
+        Tree::MediaNode.new(parser.parse_media_query_list.to_a)
       else
+        unprefixed_directive = directive.gsub(/^-[a-z0-9]+-/i, '')
+        if unprefixed_directive == 'supports'
+          parser = Sass::SCSS::Parser.new(value, @options[:filename], @line)
+          return Tree::SupportsNode.new(directive, parser.parse_supports_condition)
+        end
+
         Tree::DirectiveNode.new(
           value.nil? ? ["@#{directive}"] : ["@#{directive} "] + parse_interp(value, offset))
       end
@@ -792,7 +813,7 @@ WARNING
         str = script_parser.parse_string
         media_parser = Sass::SCSS::Parser.new(scanner, @options[:filename], @line)
         media = media_parser.parse_media_query_list
-        return Tree::CssImportNode.new(str, media)
+        return Tree::CssImportNode.new(str, media.to_a)
       end
 
       unless str = scanner.scan(Sass::SCSS::RX::STRING)
@@ -804,8 +825,8 @@ WARNING
       if !scanner.match?(/[,;]|$/)
         media_parser = Sass::SCSS::Parser.new(scanner, @options[:filename], @line)
         media = media_parser.parse_media_query_list
-        Tree::CssImportNode.new(str || uri, media)
-      elsif val =~ /^http:\/\//
+        Tree::CssImportNode.new(str || uri, media.to_a)
+      elsif val =~ /^(https?:)?\/\//
         Tree::CssImportNode.new("url(#{val})")
       else
         Tree::ImportNode.new(val)
@@ -818,9 +839,9 @@ WARNING
       raise SyntaxError.new("Invalid mixin \"#{line.text[1..-1]}\".") if name.nil?
 
       offset = line.offset + line.text.size - arg_string.size
-      args = Script::Parser.new(arg_string.strip, @line, offset, @options).
+      args, splat = Script::Parser.new(arg_string.strip, @line, offset, @options).
         parse_mixin_definition_arglist
-      Tree::MixinDefNode.new(name, args)
+      Tree::MixinDefNode.new(name, args, splat)
     end
 
     CONTENT_RE = /^@content\s*(.+)?$/
@@ -838,9 +859,9 @@ WARNING
       raise SyntaxError.new("Invalid mixin include \"#{line.text}\".") if name.nil?
 
       offset = line.offset + line.text.size - arg_string.size
-      args, keywords = Script::Parser.new(arg_string.strip, @line, offset, @options).
+      args, keywords, splat = Script::Parser.new(arg_string.strip, @line, offset, @options).
         parse_mixin_include_arglist
-      Tree::MixinNode.new(name, args, keywords)
+      Tree::MixinNode.new(name, args, keywords, splat)
     end
 
     FUNCTION_RE = /^@function\s*(#{Sass::SCSS::RX::IDENT})(.*)$/
@@ -849,9 +870,9 @@ WARNING
       raise SyntaxError.new("Invalid function definition \"#{line.text}\".") if name.nil?
 
       offset = line.offset + line.text.size - arg_string.size
-      args = Script::Parser.new(arg_string.strip, @line, offset, @options).
+      args, splat = Script::Parser.new(arg_string.strip, @line, offset, @options).
         parse_function_definition_arglist
-      Tree::FunctionNode.new(name, args)
+      Tree::FunctionNode.new(name, args, splat)
     end
 
     def parse_script(script, options = {})

@@ -12,6 +12,7 @@ class Sass::Tree::Visitors::Cssize < Sass::Tree::Visitors::Base
   attr_reader :parent
 
   def initialize
+    @parent_directives = []
     @extends = Sass::Util::SubsetMap.new
   end
 
@@ -31,6 +32,8 @@ class Sass::Tree::Visitors::Cssize < Sass::Tree::Visitors::Base
     end
   end
 
+  MERGEABLE_DIRECTIVES = [Sass::Tree::MediaNode]
+
   # Runs a block of code with the current parent node
   # replaced with the given node.
   #
@@ -38,9 +41,18 @@ class Sass::Tree::Visitors::Cssize < Sass::Tree::Visitors::Base
   # @yield A block in which the parent is set to `parent`.
   # @return [Object] The return value of the block.
   def with_parent(parent)
+    if parent.is_a?(Sass::Tree::DirectiveNode)
+      if MERGEABLE_DIRECTIVES.any? {|klass| parent.is_a?(klass)}
+        old_parent_directive = @parent_directives.pop
+      end
+      @parent_directives.push parent
+    end
+
     old_parent, @parent = @parent, parent
     yield
   ensure
+    @parent_directives.pop if parent.is_a?(Sass::Tree::DirectiveNode)
+    @parent_directives.push old_parent_directive if old_parent_directive
     @parent = old_parent
   end
 
@@ -81,6 +93,22 @@ class Sass::Tree::Visitors::Cssize < Sass::Tree::Visitors::Base
     raise e
   end
 
+  # A simple struct wrapping up information about a single `@extend` instance. A
+  # single [ExtendNode] can have multiple Extends if either the parent node or
+  # the extended selector is a comma sequence.
+  #
+  # @attr extender [Sass::Selector::Sequence]
+  #   The selector of the CSS rule containing the `@extend`.
+  # @attr target [Array<Sass::Selector::Simple>] The selector being `@extend`ed.
+  # @attr node [Sass::Tree::ExtendNode] The node that produced this extend.
+  # @attr directives [Array<Sass::Tree::DirectiveNode>]
+  #   The directives containing the `@extend`.
+  # @attr result [Symbol]
+  #   The result of this extend. One of `:not_found` (the target doesn't exist
+  #   in the document), `:failed_to_unify` (the target exists but cannot be
+  #   unified with the extender), or `:succeeded`.
+  Extend = Struct.new(:extender, :target, :node, :directives, :result)
+
   # Registers an extension in the `@extends` subset map.
   def visit_extend(node)
     node.resolved_selector.members.each do |seq|
@@ -101,7 +129,7 @@ class Sass::Tree::Visitors::Cssize < Sass::Tree::Visitors::Base
           raise Sass::SyntaxError.new("#{seq} can't extend: invalid selector")
         end
 
-        @extends[sel] = seq
+        @extends[sel] = Extend.new(seq, sel, node, @parent_directives.dup, :not_found)
       end
     end
 
@@ -124,7 +152,7 @@ class Sass::Tree::Visitors::Cssize < Sass::Tree::Visitors::Base
     yield unless bubble(node)
     media = node.children.select {|c| c.is_a?(Sass::Tree::MediaNode)}
     node.children.reject! {|c| c.is_a?(Sass::Tree::MediaNode)}
-    media = media.select {|n| n.query = n.query.merge(node.query)}
+    media = media.select {|n| n.resolved_query = n.resolved_query.merge(node.resolved_query)}
     (node.children.empty? ? [] : [node]) + media
   end
 
