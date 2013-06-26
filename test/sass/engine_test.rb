@@ -523,6 +523,21 @@ MESSAGE
     assert_hash_has(err.sass_backtrace[2], :mixin => "foo", :line => 2)
   end
 
+  def test_mixin_loop_with_content
+    render <<SASS
+=foo
+  @content
+=bar
+  +foo
+    +bar
++bar
+SASS
+    assert(false, "Exception not raised")
+  rescue Sass::SyntaxError => err
+    assert_equal("An @include loop has been found: bar includes itself", err.message)
+    assert_hash_has(err.sass_backtrace[0], :mixin => "@content", :line => 5)
+  end
+
   def test_basic_import_loop_exception
     import = filename_for_test
     importer = MockImporter.new
@@ -542,7 +557,7 @@ ERR
     importer.add_import("bar", "@import 'foo'")
 
     engine = Sass::Engine.new('@import "foo"', :filename => filename_for_test,
-      :load_paths => [importer])
+      :load_paths => [importer], :importer => importer)
 
     assert_raise_message(Sass::SyntaxError, <<ERR.rstrip) {engine.render}
 An @import loop has been found:
@@ -559,7 +574,7 @@ ERR
     importer.add_import("baz", "@import 'foo'")
 
     engine = Sass::Engine.new('@import "foo"', :filename => filename_for_test,
-      :load_paths => [importer])
+      :load_paths => [importer], :importer => importer)
 
     assert_raise_message(Sass::SyntaxError, <<ERR.rstrip) {engine.render}
 An @import loop has been found:
@@ -715,7 +730,7 @@ SASS
     importer.add_import("imported", "div{color:red}")
     Sass.load_paths << importer
 
-    assert_equal "div {\n  color: red; }\n", Sass::Engine.new('@import "imported"').render
+    assert_equal "div {\n  color: red; }\n", Sass::Engine.new('@import "imported"', :importer => importer).render
   ensure
     Sass.load_paths.clear
   end
@@ -1789,7 +1804,7 @@ SASS
 
   def test_loud_comment_in_compressed_mode
     assert_equal <<CSS, render(<<SASS, :style => :compressed)
-foo{color:blue;/* foo
+foo{color:blue;/*! foo
  * bar
  */}
 CSS
@@ -1803,7 +1818,8 @@ SASS
 
   def test_loud_comment_is_evaluated
     assert_equal <<CSS, render(<<SASS)
-/* Hue: 327.21649deg */
+/*!
+ * Hue: 327.21649deg */
 CSS
 /*!
   Hue: \#{hue(#f836a0)}
@@ -2381,6 +2397,24 @@ SASS
 
   # Regression tests
 
+  def test_parent_mixin_in_content_nested
+    assert_equal(<<CSS, render(<<SASS))
+a {
+  b: c; }
+CSS
+=foo
+  @content
+
+=bar
+  +foo
+    +foo
+      a
+        b: c
+
++bar
+SASS
+  end
+
   def test_supports_bubbles
     assert_equal <<CSS, render(<<SASS)
 parent {
@@ -2453,15 +2487,15 @@ SASS
 
   def test_interpolated_comment_in_mixin
     assert_equal <<CSS, render(<<SASS)
-/* color: red */
+/*! color: red */
 .foo {
   color: red; }
 
-/* color: blue */
+/*! color: blue */
 .foo {
   color: blue; }
 
-/* color: green */
+/*! color: green */
 .foo {
   color: green; }
 CSS
@@ -2756,7 +2790,7 @@ CSS
 /* \\\#{foo}
 SASS
     assert_equal <<CSS, render(<<SASS)
-/* \#{foo} */
+/*! \#{foo} */
 CSS
 /*! \\\#{foo}
 SASS
@@ -2939,7 +2973,7 @@ SCSS
 
     original_filename = filename_for_test
     engine = Sass::Engine.new('@import "imported"; div{color:blue}',
-      :filename => original_filename, :load_paths => [importer], :syntax => :scss)
+      :filename => original_filename, :load_paths => [importer], :syntax => :scss, :importer => importer)
     engine.render
 
     assert_equal original_filename, engine.options[:original_filename]
@@ -3174,6 +3208,7 @@ SASS
 
   def render(sass, options = {})
     munge_filename options
+    options[:importer] ||= MockImporter.new
     Sass::Engine.new(sass, options).render
   end
 

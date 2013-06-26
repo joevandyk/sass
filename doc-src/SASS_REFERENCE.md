@@ -365,7 +365,7 @@ and they're highly unlikely to ever be used in practice.
 In general, Sass will try to encode the output stylesheet
 using the same encoding as the input stylesheet.
 In order for it to do this, though, the input stylesheet must have a `@charset` declaration;
-otherwise, Sass will default to encoding the output stylesheet as UTF-8.
+otherwise, Sass will default to encoding the output stylesheet as `UTF-8`.
 In addition, it will add a `@charset` declaration to the output
 if it's not plain ASCII.
 
@@ -969,13 +969,13 @@ Instead, they're manipulated using the
 Parentheses can be used to affect the order of operations:
 
     p {
-      width: 1em + (2em * 3);
+      width: (1em + 2em) * 3;
     }
 
 is compiled to:
 
     p {
-      width: 7em; }
+      width: 9em; }
 
 ### Functions
 
@@ -1323,10 +1323,21 @@ For example:
       border-width: 3px;
     }
 
+is compiled to:
+
+    .error, .seriousError {
+      border: 1px #f00;
+      background-color: #fdd;
+    }
+
+    .seriousError {
+      border-width: 3px;
+    }
+
 This means that all styles defined for `.error`
 are also applied to `.seriousError`,
 in addition to the styles specific to `.seriousError`.
-In effect, everything with class `.seriousError` also has class `.error`.
+In effect, every element with class `.seriousError` also has class `.error`.
 
 Other rules that use `.error` will work for `.seriousError` as well.
 For example, if we have special styles for errors caused by hackers:
@@ -1450,7 +1461,7 @@ is compiled to:
     .seriousError {
       border-width: 3px; }
 
-In effect, everything with class `.seriousError`
+In effect, every element with class `.seriousError`
 also has class `.error` *and* class `.attention`.
 Thus, the styles defined later in the document take precedence:
 `.seriousError` has background color `#ff0` rather than `#fdd`,

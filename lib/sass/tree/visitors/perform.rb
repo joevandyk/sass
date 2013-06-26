@@ -144,9 +144,9 @@ class Sass::Tree::Visitors::Perform < Sass::Tree::Visitors::Base
     res = node.expr.perform(@environment)
     res = res.value if res.is_a?(Sass::Script::String)
     if node.filename
-      $stderr.puts "#{node.filename}:#{node.line} DEBUG: #{res}"
+      Sass::Util.sass_warn "#{node.filename}:#{node.line} DEBUG: #{res}"
     else
-      $stderr.puts "Line #{node.line} DEBUG: #{res}"
+      Sass::Util.sass_warn "Line #{node.line} DEBUG: #{res}"
     end
     []
   end
@@ -421,7 +421,7 @@ class Sass::Tree::Visitors::Perform < Sass::Tree::Visitors::Base
       end
     end
 
-    return if mixins.empty?
+    return unless mixins.include?(node.name)
     raise Sass::SyntaxError.new("#{msg} #{node.name} includes itself") if mixins.size == 1
 
     msg << "\n" << Sass::Util.enum_cons(mixins.reverse + [node.name], 2).map do |m1, m2|

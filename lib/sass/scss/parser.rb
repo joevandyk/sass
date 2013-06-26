@@ -120,7 +120,6 @@ module Sass
           value = [text.sub(/^\s*\/\//, '/*').gsub(/^\s*\/\//, ' *') + ' */']
         else
           value = Sass::Engine.parse_interp(text, line, @scanner.pos - text.size, :filename => @filename)
-          value[0].slice!(2) if loud # get rid of the "!"
           value.unshift(@scanner.
             string[0...@scanner.pos].
             reverse[/.*?\*\/(.*?)($|\Z)/, 1].
@@ -1112,7 +1111,7 @@ MESSAGE
       end
 
       def rethrow(err)
-        if @throw_err
+        if @throw_error
           throw :_sass_parser_error, err
         else
           @scanner = Sass::Util::MultibyteStringScanner.new(@scanner.string)

@@ -3,7 +3,58 @@
 * Table of contents
 {:toc}
 
-## 3.2.7 (Unreleased)
+## 3.2.10 (Unreleased)
+
+* Use the Sass logger infrastructure for `@debug` directives.
+
+* When printing a Sass error into a CSS comment, escape `*/` so the comment
+  doesn't end prematurely.
+
+* Preserve the `!` in `/*! ... */`-style comments.
+
+* Fix a bug where selectors were being incorrectly trimmed when using `@extend`.
+
+## 3.2.9
+
+* Fix a bug where `@extend`s would occasionally cause a selector to be generated
+  with the incorrect specificity.
+
+* Avoid loading [listen](http://github.com/guard/listen) v1.0, even if it's
+  installed as a Gem (see [issue 719](https://github.com/nex3/sass/issues/719)).
+
+* Update the bundled version of [listen](http://github.com/guard/listen) to
+  0.7.3.
+
+* Automatically avoid the [IE7 `content: counter` bug][cc bug].
+
+[cc bug]: http://jes.st/2013/ie7s-css-breaking-content-counter-bug/
+
+## 3.2.8
+
+* Fix some edge cases where redundant selectors were emitted when using
+  `@extend`.
+
+* Fix a bug where comma-separated lists with interpolation could lose elements.
+
+* Fix a bug in `sass-convert` where lists being passed as arguments to functions
+  or mixins would lose their surrounding parentheses.
+
+* Fix a bug in `sass-convert` where `null` wasn't being converted correctly.
+
+* Fix a bug where multiple spaces in a string literal would sometimes be folded
+  together.
+
+* `sass` and `sass-convert` won't create an empty file before writing to it.
+  This fixes a flash of unstyled content when using LiveReload and similar
+  tools.
+
+* Fix a case where a corrupted cache could produce fatal errors on some versions
+  of Ruby.
+
+* Fix a case where a mixin loop error would be incorrectly reported when using
+  `@content`.
+
+## 3.2.7
 
 * The \{Sass::Script::Functions#index `index`} and \{Sass::Script::Functions#zip
   `zip`} functions now work like all other list functions and treat individual
@@ -239,7 +290,7 @@ that make use of `@media` and other directives dynamically.
   {Sass.load_paths}. This allows plugins and libraries to easily register their
   Sass files such that they're accessible to all {Sass::Engine} instances.
 
-* `Sass.load_paths` is initialized to the value of the `SASS_PATH`environment
+* `Sass.load_paths` is initialized to the value of the `SASS_PATH` environment
   variable. This variable should contain a colon-separated list of load paths
   (semicolon-separated on Windows).
 
