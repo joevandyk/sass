@@ -1,7 +1,5 @@
 require 'sass/scss/rx'
 
-require 'strscan'
-
 module Sass
   module Script
     # The lexical analyzer for SassScript.
@@ -64,6 +62,7 @@ module Sass
         '}' => :end_interpolation,
         ';' => :semicolon,
         '{' => :lcurly,
+        '...' => :splat,
       }
 
       OPERATORS_REVERSE = Sass::Util.map_hash(OPERATORS) {|k, v| [v, k]}
@@ -92,6 +91,7 @@ module Sass
         :number => /(-)?(?:(\d*\.\d+)|(\d+))([a-zA-Z%]+)?/,
         :color => HEXCOLOR,
         :bool => /(true|false)\b/,
+        :null => /null\b/,
         :ident_op => %r{(#{Regexp.union(*IDENT_OP_NAMES.map{|s| Regexp.new(Regexp.escape(s) + "(?!#{NMCHAR}|\Z)")})})},
         :op => %r{(#{Regexp.union(*OP_NAMES)})},
       }
@@ -116,6 +116,12 @@ module Sass
         [:single, true] => string_re('', "'"),
         [:uri, false] => /url\(#{W}(#{URLCHAR}*?)(#{W}\)|#\{)/,
         [:uri, true] => /(#{URLCHAR}*?)(#{W}\)|#\{)/,
+        # Defined in https://developer.mozilla.org/en/CSS/@-moz-document as a
+        # non-standard version of http://www.w3.org/TR/css3-conditional/
+        [:url_prefix, false] => /url-prefix\(#{W}(#{URLCHAR}*?)(#{W}\)|#\{)/,
+        [:url_prefix, true] => /(#{URLCHAR}*?)(#{W}\)|#\{)/,
+        [:domain, false] => /domain\(#{W}(#{URLCHAR}*?)(#{W}\)|#\{)/,
+        [:domain, true] => /(#{URLCHAR}*?)(#{W}\)|#\{)/,
       }
 
       # @param str [String, StringScanner] The source text to lex
@@ -126,7 +132,7 @@ module Sass
       # @param options [{Symbol => Object}] An options hash;
       #   see {file:SASS_REFERENCE.md#sass_options the Sass options documentation}
       def initialize(str, line, offset, options)
-        @scanner = str.is_a?(StringScanner) ? str : StringScanner.new(str)
+        @scanner = str.is_a?(StringScanner) ? str : Sass::Util::MultibyteStringScanner.new(str)
         @line = line
         @offset = offset
         @options = options
@@ -230,7 +236,7 @@ module Sass
         end
 
         variable || string(:double, false) || string(:single, false) || number ||
-          color || bool || string(:uri, false) || raw(UNICODERANGE) ||
+          color || bool || null || string(:uri, false) || raw(UNICODERANGE) ||
           special_fun || special_val || ident_op || ident || op
       end
 
@@ -239,8 +245,6 @@ module Sass
       end
 
       def _variable(rx)
-        line = @line
-        offset = @offset
         return unless scan(rx)
 
         [:const, @scanner[2]]
@@ -288,8 +292,13 @@ MESSAGE
         [:bool, Script::Bool.new(s == 'true')]
       end
 
+      def null
+        return unless scan(REGULAR_EXPRESSIONS[:null])
+        [:null, Script::Null.new]
+      end
+
       def special_fun
-        return unless str1 = scan(/((-[\w-]+-)?calc|expression|progid:[a-z\.]*)\(/i)
+        return unless str1 = scan(/((-[\w-]+-)?(calc|element)|expression|progid:[a-z\.]*)\(/i)
         str2, _ = Sass::Shared.balance(@scanner, ?(, ?), 1)
         c = str2.count("\n")
         old_line = @line

@@ -33,6 +33,12 @@ module Sass
         to_a.map {|e| e.is_a?(Sass::Script::Node) ? "\#{#{e.to_sass}}" : e}.join
       end
 
+      # @see \{#inspect}
+      # @return [String]
+      def to_s
+        inspect
+      end
+
       # Returns a hash code for this selector object.
       #
       # By default, this is based on the value of \{#to\_a},
@@ -79,7 +85,7 @@ module Sass
         sels_with_ix = Sass::Util.enum_with_index(sels)
         _, i =
           if self.is_a?(Pseudo) || self.is_a?(SelectorPseudoClass)
-            sels_with_ix.find {|sel, _| sel.is_a?(Pseudo) && sels.last.type == :element}
+            sels_with_ix.find {|sel, _| sel.is_a?(Pseudo) && (sels.last.final? || sels.last.type == :element)}
           else
             sels_with_ix.find {|sel, _| sel.is_a?(Pseudo) || sel.is_a?(SelectorPseudoClass)}
           end

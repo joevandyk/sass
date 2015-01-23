@@ -108,7 +108,7 @@ module Sass
             @options[:filename] = filename
             open_file(filename) || $stdin
           end
-        output ||= open_file(args.shift, 'w') || $stdout
+        output ||= args.shift || $stdout
 
         @options[:input], @options[:output] = input, output
       end
@@ -125,6 +125,7 @@ module Sass
       def puts_action(name, color, arg)
         return if @options[:for_engine][:quiet]
         printf color(color, "%11s %s\n"), name, arg
+        STDOUT.flush
       end
 
       # Same as \{Kernel.puts}, but doesn't print anything if the `--quiet` option is set.
@@ -152,6 +153,14 @@ module Sass
         # and not-real terminals, which aren't ttys.
         return str if ENV["TERM"].nil? || ENV["TERM"].empty? || !STDOUT.tty?
         return "\e[#{COLORS[color]}m#{str}\e[0m"
+      end
+
+      def write_output(text, destination)
+        if destination.is_a?(String)
+          File.open(destination, 'w') {|file| file.write(text)}
+        else
+          destination.write(text)
+        end
       end
 
       private
@@ -229,6 +238,14 @@ END
                                    'Only meaningful for --watch and --update.') do
           @options[:stop_on_error] = true
         end
+        opts.on('--poll', 'Check for file changes manually, rather than relying on the OS.',
+                          'Only meaningful for --watch.') do
+          @options[:poll] = true
+        end
+        opts.on('-f', '--force', 'Recompile all Sass files, even if the CSS file is newer.',
+                                 'Only meaningful for --update.') do
+          @options[:force] = true
+        end
         opts.on('-c', '--check', "Just check syntax, don't evaluate.") do
           require 'stringio'
           @options[:check_syntax] = true
@@ -237,6 +254,10 @@ END
         opts.on('-t', '--style NAME',
                 'Output style. Can be nested (default), compact, compressed, or expanded.') do |name|
           @options[:for_engine][:style] = name.to_sym
+        end
+        opts.on('--precision NUMBER_OF_DIGITS', Integer,
+                'How many digits of precision to use when outputting decimal numbers. Defaults to 3.') do |precision|
+          ::Sass::Script::Number.precision = precision
         end
         opts.on('-q', '--quiet', 'Silence warnings and status messages during compilation.') do
           @options[:for_engine][:quiet] = true
@@ -294,6 +315,7 @@ END
         return watch_or_update if @options[:watch] || @options[:update]
         super
         @options[:for_engine][:filename] = @options[:filename]
+        @options[:for_engine][:css_filename] = @options[:output] if @options[:output].is_a?(String)
 
         begin
           input = @options[:input]
@@ -313,8 +335,7 @@ END
 
           input.close() if input.is_a?(File)
 
-          output.write(engine.render)
-          output.close() if output.is_a? File
+          write_output(engine.render, output)
         rescue ::Sass::SyntaxError => e
           raise e if @options[:trace]
           raise e.sass_backtrace_str("standard input")
@@ -349,6 +370,12 @@ END
         require 'sass/plugin'
         ::Sass::Plugin.options.merge! @options[:for_engine]
         ::Sass::Plugin.options[:unix_newlines] = @options[:unix_newlines]
+        ::Sass::Plugin.options[:poll] = @options[:poll]
+
+        if @options[:force]
+          raise "The --force flag may only be used with --update." unless @options[:update]
+          ::Sass::Plugin.options[:always_update] = true
+        end
 
         raise <<MSG if @args.empty?
 What files should I watch? Did you mean something like:
@@ -372,11 +399,11 @@ MSG
 
         dirs, files = @args.map {|name| split_colon_path(name)}.
           partition {|i, _| File.directory? i}
-        files.map! {|from, to| [from, to || from.gsub(/\..*?$/, '.css')]}
+        files.map! {|from, to| [from, to || from.gsub(/\.[^.]*?$/, '.css')]}
         dirs.map! {|from, to| [from, to || from]}
         ::Sass::Plugin.options[:template_location] = dirs
 
-        ::Sass::Plugin.on_updating_stylesheet do |_, css|
+        ::Sass::Plugin.on_updated_stylesheet do |_, css|
           if File.exists? css
             puts_action :overwrite, :yellow, css
           else
@@ -388,9 +415,17 @@ MSG
         ::Sass::Plugin.on_creating_directory {|dirname| puts_action :directory, :green, dirname}
         ::Sass::Plugin.on_deleting_css {|filename| puts_action :delete, :yellow, filename}
         ::Sass::Plugin.on_compilation_error do |error, _, _|
+          if error.is_a?(SystemCallError) && !@options[:stop_on_error]
+            had_error = true
+            puts_action :error, :red, error.message
+            STDOUT.flush
+            next
+          end
+
           raise error unless error.is_a?(::Sass::SyntaxError) && !@options[:stop_on_error]
           had_error = true
           puts_action :error, :red, "#{error.sass_filename} (Line #{error.sass_line}: #{error.message})"
+          STDOUT.flush
         end
 
         if @options[:update]
@@ -401,9 +436,18 @@ MSG
 
         puts ">>> Sass is watching for changes. Press Ctrl-C to stop."
 
-        ::Sass::Plugin.on_template_modified {|template| puts ">>> Change detected to: #{template}"}
-        ::Sass::Plugin.on_template_created {|template| puts ">>> New template detected: #{template}"}
-        ::Sass::Plugin.on_template_deleted {|template| puts ">>> Deleted template detected: #{template}"}
+        ::Sass::Plugin.on_template_modified do |template|
+          puts ">>> Change detected to: #{template}"
+          STDOUT.flush
+        end
+        ::Sass::Plugin.on_template_created do |template|
+          puts ">>> New template detected: #{template}"
+          STDOUT.flush
+        end
+        ::Sass::Plugin.on_template_deleted do |template|
+          puts ">>> Deleted template detected: #{template}"
+          STDOUT.flush
+        end
 
         ::Sass::Plugin.watch(files)
       end
@@ -429,7 +473,7 @@ MSG
       def probably_dest_dir?(path)
         return false unless path
         return false if colon_path?(path)
-        return Dir.glob(File.join(path, "*.s[ca]ss")).empty?
+        return ::Sass::Util.glob(File.join(path, "*.s[ca]ss")).empty?
       end
     end
 
@@ -467,14 +511,14 @@ Options:
 END
 
         opts.on('-F', '--from FORMAT',
-          'The format to convert from. Can be css, scss, sass, less.',
+          'The format to convert from. Can be css, scss, sass.',
           'By default, this is inferred from the input filename.',
           'If there is none, defaults to css.') do |name|
           @options[:from] = name.downcase.to_sym
-          unless [:css, :scss, :sass, :less].include?(@options[:from])
+          raise "sass-convert no longer supports LessCSS." if @options[:from] == :less
+          unless [:css, :scss, :sass].include?(@options[:from])
             raise "Unknown format for sass-convert --from: #{name}"
           end
-          try_less_note if @options[:from] == :less
         end
 
         opts.on('-T', '--to FORMAT',
@@ -500,6 +544,17 @@ END
 
         opts.on('--dasherize', 'Convert underscores to dashes') do
           @options[:for_tree][:dasherize] = true
+        end
+
+        opts.on('--indent NUM',
+          'How many spaces to use for each level of indentation. Defaults to 2.',
+          '"t" means use hard tabs.') do |indent|
+
+          if indent == 't'
+            @options[:for_tree][:indent] = "\t"
+          else
+            @options[:for_tree][:indent] = " " * indent.to_i
+          end
         end
 
         opts.on('--old', 'Output the old-style ":prop val" property syntax.',
@@ -561,7 +616,7 @@ END
         end
 
         ext = @options[:from]
-        Dir.glob("#{@options[:input]}/**/*.#{ext}") do |f|
+        ::Sass::Util.glob("#{@options[:input]}/**/*.#{ext}") do |f|
           output =
             if @options[:in_place]
               f
@@ -585,7 +640,6 @@ END
           end
 
           input = open_file(f)
-          output = @options[:in_place] ? input : open_file(output, "w")
           process_file(input, output)
         end
       end
@@ -596,7 +650,7 @@ END
             case input.path
             when /\.scss$/; :scss
             when /\.sass$/; :sass
-            when /\.less$/; :less
+            when /\.less$/; raise "sass-convert no longer supports LessCSS."
             when /\.css$/; :css
             end
         elsif @options[:in_place]
@@ -620,11 +674,6 @@ END
             if @options[:from] == :css
               require 'sass/css'
               ::Sass::CSS.new(input.read, @options[:for_tree]).render(@options[:to])
-            elsif @options[:from] == :less
-              require 'sass/less'
-              try_less_note
-              input = input.read if input.is_a?(IO) && !input.is_a?(File) # Less is dumb
-              Less::Engine.new(input).to_tree.to_sass_tree.send("to_#{@options[:to]}", @options[:for_tree])
             else
               if input.is_a?(File)
                 ::Sass::Engine.for_file(input.path, @options[:for_engine])
@@ -635,24 +684,13 @@ END
           end
 
         output = File.open(input.path, 'w') if @options[:in_place]
-        output.write(out)
+        write_output(out, output)
       rescue ::Sass::SyntaxError => e
         raise e if @options[:trace]
         file = " of #{e.sass_filename}" if e.sass_filename
         raise "Error on line #{e.sass_line}#{file}: #{e.message}\n  Use --trace for backtrace"
       rescue LoadError => err
         handle_load_error(err)
-      end
-
-      @@less_note_printed = false
-      def try_less_note
-        return if @@less_note_printed
-        @@less_note_printed = true
-        warn <<NOTE
-* NOTE: Sass and Less are different languages, and they work differently.
-* I'll do my best to translate, but some features -- especially mixins --
-* should be checked by hand.
-NOTE
       end
     end
   end

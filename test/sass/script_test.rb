@@ -7,19 +7,27 @@ module Sass::Script::Functions::UserFunctions
     val.options[:foo]
     Sass::Script::String.new("Options defined!")
   end
+
+  def arg_error
+    assert_options
+  end
+end
+
+module Sass::Script::Functions
+  include Sass::Script::Functions::UserFunctions
 end
 
 class SassScriptTest < Test::Unit::TestCase
   include Sass::Script
 
   def test_color_checks_input
-    assert_raise_message(ArgumentError, "Blue value must be between 0 and 255") {Color.new([1, 2, -1])}
-    assert_raise_message(ArgumentError, "Red value must be between 0 and 255") {Color.new([256, 2, 3])}
+    assert_raise_message(ArgumentError, "Blue value -1 must be between 0 and 255") {Color.new([1, 2, -1])}
+    assert_raise_message(ArgumentError, "Red value 256 must be between 0 and 255") {Color.new([256, 2, 3])}
   end
 
   def test_color_checks_rgba_input
-    assert_raise_message(ArgumentError, "Alpha channel must be between 0 and 1") {Color.new([1, 2, 3, 1.1])}
-    assert_raise_message(ArgumentError, "Alpha channel must be between 0 and 1") {Color.new([1, 2, 3, -0.1])}
+    assert_raise_message(ArgumentError, "Alpha channel 1.1 must be between 0 and 1") {Color.new([1, 2, 3, 1.1])}
+    assert_raise_message(ArgumentError, "Alpha channel -0.1 must be between 0 and 1") {Color.new([1, 2, 3, -0.1])}
   end
 
   def test_string_escapes
@@ -32,12 +40,6 @@ class SassScriptTest < Test::Unit::TestCase
     assert_equal '"', resolve("'\"'")
     assert_equal "\\\\", resolve("'\\\\'")
     assert_equal "\\02fa", resolve("'\\02fa'")
-  end
-
-  def test_string_interpolation
-    assert_equal "foo2bar", resolve('\'foo#{1 + 1}bar\'')
-    assert_equal "foo2bar", resolve('"foo#{1 + 1}bar"')
-    assert_equal "foo1bar5baz4bang", resolve('\'foo#{1 + "bar#{2 + 3}baz" + 4}bang\'')
   end
 
   def test_color_names
@@ -80,7 +82,7 @@ class SassScriptTest < Test::Unit::TestCase
   end
 
   def test_rgba_rounding
-    assert_equal "rgba(10, 1, 0, 0.123)", resolve("rgba(10.0, 1.23456789, 0.0, 0.1234567)")
+    assert_equal "rgba(10, 1, 0, 0.12346)", resolve("rgba(10.0, 1.23456789, 0.0, 0.1234567)")
   end
 
   def test_compressed_colors
@@ -130,6 +132,9 @@ class SassScriptTest < Test::Unit::TestCase
     assert_equal '3, 7', resolve('#{1 + 2}, #{3 + 4}')
     assert_equal '3 ,7', resolve('#{1 + 2} ,#{3 + 4}')
     assert_equal '3,7', resolve('#{1 + 2},#{3 + 4}')
+    assert_equal '3, 7, 11', resolve('#{1 + 2}, #{3 + 4}, #{5 + 6}')
+    assert_equal '3, 7, 11', resolve('3, #{3 + 4}, 11')
+    assert_equal '3, 7, 11', resolve('3, 7, #{5 + 6}')
 
     assert_equal '3 / 7', resolve('3 / #{3 + 4}')
     assert_equal '3 /7', resolve('3 /#{3 + 4}')
@@ -167,6 +172,9 @@ class SassScriptTest < Test::Unit::TestCase
     assert_equal "foo bar baz bang", resolve('"foo #{"#{"ba" + "r"} baz"} bang"')
     assert_equal 'foo #{bar baz} bang', resolve('"foo \#{#{"ba" + "r"} baz} bang"')
     assert_equal 'foo #{baz bang', resolve('"foo #{"\#{" + "baz"} bang"')
+    assert_equal "foo2bar", resolve('\'foo#{1 + 1}bar\'')
+    assert_equal "foo2bar", resolve('"foo#{1 + 1}bar"')
+    assert_equal "foo1bar5baz4bang", resolve('\'foo#{1 + "bar#{2 + 3}baz" + 4}bang\'')
   end
 
   def test_rule_interpolation
@@ -253,6 +261,10 @@ SASS
     assert_equal "false", resolve("false")
   end
 
+  def test_null
+    assert_equal "", resolve("null")
+  end
+
   def test_boolean_ops
     assert_equal "true", resolve("true and true")
     assert_equal "true", resolve("false or true")
@@ -271,6 +283,18 @@ SASS
     assert_equal "false", resolve("false and 1")
     assert_equal "2", resolve("2 or 3")
     assert_equal "3", resolve("2 and 3")
+
+    assert_equal "true", resolve("null or true")
+    assert_equal "true", resolve("true or null")
+    assert_equal "", resolve("null or null")
+    assert_equal "", resolve("null and true")
+    assert_equal "", resolve("true and null")
+    assert_equal "", resolve("null and null")
+
+    assert_equal "true", resolve("not null")
+
+    assert_equal "1", resolve("null or 1")
+    assert_equal "", resolve("null and 1")
   end
 
   def test_arithmetic_ops
@@ -316,6 +340,37 @@ SASS
     assert_equal "false", resolve("3 <= 2")
   end
 
+  def test_null_ops
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "null plus 1".') {eval("null + 1")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "null minus 1".') {eval("null - 1")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "null times 1".') {eval("null * 1")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "null div 1".') {eval("null / 1")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "null mod 1".') {eval("null % 1")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "1 plus null".') {eval("1 + null")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "1 minus null".') {eval("1 - null")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "1 times null".') {eval("1 * null")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "1 div null".') {eval("1 / null")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "1 mod null".') {eval("1 % null")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "1 gt null".') {eval("1 > null")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "null lt 1".') {eval("null < 1")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: "null plus null".') {eval("null + null")}
+    assert_raise_message(Sass::SyntaxError,
+      'Invalid null operation: ""foo" plus null".') {eval("foo + null")}
+  end
+
   def test_equals
     assert_equal("true", resolve('"foo" == $foo', {},
         env("foo" => Sass::Script::String.new("foo"))))
@@ -331,6 +386,16 @@ SASS
     assert_equal "false", resolve('(1 (2 3)) == (1 2 3)')
     assert_equal "false", resolve('((1, 2) (3, 4)) == (1, 2 3, 4)')
     assert_equal "false", resolve('(1 2 3) == (1, 2, 3)')
+
+    assert_equal "true", resolve('null == null')
+    assert_equal "false", resolve('"null" == null')
+    assert_equal "false", resolve('0 == null')
+    assert_equal "false", resolve('() == null')
+
+    assert_equal "false", resolve('null != null')
+    assert_equal "true", resolve('"null" != null')
+    assert_equal "true", resolve('0 != null')
+    assert_equal "true", resolve('() != null')
   end
 
   def test_operation_precedence
@@ -349,6 +414,7 @@ SASS
 
   def test_operator_unit_conversion
     assert_equal "1.1cm", resolve("1cm + 1mm")
+    assert_equal "2in", resolve("1in + 96px")
     assert_equal "true", resolve("2mm < 1cm")
     assert_equal "true", resolve("10mm == 1cm")
     assert_equal "true", resolve("1 == 1cm")
@@ -414,6 +480,34 @@ SASS
     assert_raise_message(Sass::SyntaxError, "() isn't a valid CSS value.") {resolve("nth(append((), ()), 1)")}
   end
 
+  def test_list_with_nulls
+    assert_equal "1, 2, 3", resolve("1, 2, null, 3")
+    assert_equal "1 2 3", resolve("1 2 null 3")
+    assert_equal "1, 2, 3", resolve("1, 2, 3, null")
+    assert_equal "1 2 3", resolve("1 2 3 null")
+    assert_equal "1, 2, 3", resolve("null, 1, 2, 3")
+    assert_equal "1 2 3", resolve("null 1 2 3")
+  end
+
+  def test_deep_argument_error_not_unwrapped
+    # JRuby (as of 1.6.7.2) offers no way of distinguishing between
+    # argument errors caused by programming errors in a function and
+    # argument errors explicitly thrown within that function.
+    return if RUBY_PLATFORM =~ /java/
+
+    # Don't validate the message; it's different on Rubinius.
+    assert_raise(ArgumentError) {resolve("arg-error()")}
+  end
+
+  def test_shallow_argument_error_unwrapped
+    assert_raise_message(Sass::SyntaxError, "wrong number of arguments (1 for 0) for `arg-error'") {resolve("arg-error(1)")}
+  end
+
+  def test_boolean_ops_short_circuit
+    assert_equal "false", resolve("$ie and $ie <= 7", {}, env('ie' => Sass::Script::Bool.new(false)))
+    assert_equal "true", resolve("$ie or $undef", {}, env('ie' => Sass::Script::Bool.new(true)))
+  end
+
   # Regression Tests
 
   def test_funcall_has_higher_precedence_than_color_name
@@ -449,6 +543,7 @@ SASS
   def resolve(str, opts = {}, environment = env)
     munge_filename opts
     val = eval(str, opts, environment)
+    assert_kind_of Sass::Script::Literal, val
     val.is_a?(Sass::Script::String) ? val.value : val.to_s
   end
 
@@ -468,9 +563,9 @@ SASS
 
   def eval(str, opts = {}, environment = env)
     munge_filename opts
-    environment.options = opts
     Sass::Script.parse(str, opts.delete(:line) || 1,
-      opts.delete(:offset) || 0, opts).perform(environment)
+      opts.delete(:offset) || 0, opts).
+      perform(Sass::Environment.new(environment, opts))
   end
 
   def render(sass, options = {})

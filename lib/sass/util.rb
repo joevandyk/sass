@@ -2,7 +2,6 @@ require 'erb'
 require 'set'
 require 'enumerator'
 require 'stringio'
-require 'strscan'
 require 'rbconfig'
 
 require 'sass/root'
@@ -86,8 +85,9 @@ module Sass
     # @return [Hash] The mapped hash
     # @see #map_keys
     # @see #map_vals
-    def map_hash(hash, &block)
-      to_hash(hash.map(&block))
+    def map_hash(hash)
+      # Using &block here completely hoses performance on 1.8.
+      to_hash(hash.map {|k, v| yield k, v})
     end
 
     # Computes the powerset of the given array.
@@ -219,12 +219,115 @@ module Sass
       lcs_backtrace(lcs_table(x, y, &block), x, y, x.size-1, y.size-1, &block)
     end
 
+    # Converts a Hash to an Array. This is usually identical to `Hash#to_a`,
+    # with the following exceptions:
+    #
+    # * In Ruby 1.8, `Hash#to_a` is not deterministically ordered, but this is.
+    # * In Ruby 1.9 when running tests, this is ordered in the same way it would
+    #   be under Ruby 1.8 (sorted key order rather than insertion order).
+    #
+    # @param hash [Hash]
+    # @return [Array]
+    def hash_to_a(hash)
+      return hash.to_a unless ruby1_8? || defined?(Test::Unit)
+      return hash.sort_by {|k, v| k}
+    end
+
+    # Performs the equivalent of `enum.group_by.to_a`, but with a guaranteed
+    # order. Unlike [#hash_to_a], the resulting order isn't sorted key order;
+    # instead, it's the same order as `#group_by` has under Ruby 1.9 (key
+    # appearance order).
+    #
+    # @param enum [Enumerable]
+    # @return [Array<[Object, Array]>] An array of pairs.
+    def group_by_to_a(enum, &block)
+      return enum.group_by(&block).to_a unless ruby1_8?
+      order = {}
+      arr = []
+      enum.group_by do |e|
+        res = block[e]
+        unless order.include?(res)
+          order[res] = order.size
+        end
+        res
+      end.each do |key, vals|
+        arr[order[key]] = [key, vals]
+      end
+      arr
+    end
+
+    # Returns a sub-array of `minuend` containing only elements that are also in
+    # `subtrahend`. Ensures that the return value has the same order as
+    # `minuend`, even on Rubinius where that's not guaranteed by {Array#-}.
+    #
+    # @param minuend [Array]
+    # @param subtrahend [Array]
+    # @return [Array]
+    def array_minus(minuend, subtrahend)
+      return minuend - subtrahend unless rbx?
+      set = Set.new(minuend) - subtrahend
+      minuend.select {|e| set.include?(e)}
+    end
+
+    # Returns a string description of the character that caused an
+    # `Encoding::UndefinedConversionError`.
+    #
+    # @param [Encoding::UndefinedConversionError]
+    # @return [String]
+    def undefined_conversion_error_char(e)
+      # Rubinius (as of 2.0.0.rc1) pre-quotes the error character.
+      return e.error_char if rbx?
+      # JRuby (as of 1.7.2) doesn't have an error_char field on
+      # Encoding::UndefinedConversionError.
+      return e.error_char.dump unless jruby?
+      e.message[/^"[^"]+"/] #"
+    end
+
+    # Asserts that `value` falls within `range` (inclusive), leaving
+    # room for slight floating-point errors.
+    #
+    # @param name [String] The name of the value. Used in the error message.
+    # @param range [Range] The allowed range of values.
+    # @param value [Numeric, Sass::Script::Number] The value to check.
+    # @param unit [String] The unit of the value. Used in error reporting.
+    # @return [Numeric] `value` adjusted to fall within range, if it
+    #   was outside by a floating-point margin.
+    def check_range(name, range, value, unit='')
+      grace = (-0.00001..0.00001)
+      str = value.to_s
+      value = value.value if value.is_a?(Sass::Script::Number)
+      return value if range.include?(value)
+      return range.first if grace.include?(value - range.first)
+      return range.last if grace.include?(value - range.last)
+      raise ArgumentError.new(
+        "#{name} #{str} must be between #{range.first}#{unit} and #{range.last}#{unit}")
+    end
+
+    # Returns whether or not `seq1` is a subsequence of `seq2`. That is, whether
+    # or not `seq2` contains every element in `seq1` in the same order (and
+    # possibly more elements besides).
+    #
+    # @param seq1 [Array]
+    # @param seq2 [Array]
+    # @return [Boolean]
+    def subsequence?(seq1, seq2)
+      i = j = 0
+      loop do
+        return true if i == seq1.size
+        return false if j == seq2.size
+        i += 1 if seq1[i] == seq2[j]
+        j += 1
+      end
+    end
+
     # Returns information about the caller of the previous method.
     #
     # @param entry [String] An entry in the `#caller` list, or a similarly formatted string
     # @return [[String, Fixnum, (String, nil)]] An array containing the filename, line, and method name of the caller.
     #   The method name may be nil
-    def caller_info(entry = caller[1])
+    def caller_info(entry = nil)
+      # JRuby evaluates `caller` incorrectly when it's in an actual default argument.
+      entry ||= caller[1]
       info = entry.scan(/^(.*?):(-?.*?)(?::.*`(.+)')?$/).first
       info[1] = info[1].to_i
       # This is added by Rubinius to designate a block, but we don't care about it.
@@ -303,6 +406,7 @@ module Sass
     #
     # @param msg [String]
     def sass_warn(msg)
+      msg = msg + "\n" unless ruby1?
       Sass.logger.warn(msg)
     end
 
@@ -385,7 +489,56 @@ module Sass
       RUBY_ENGINE == "ironruby"
     end
 
+    # Whether or not this is running on Rubinius.
+    #
+    # @return [Boolean]
+    def rbx?
+      RUBY_ENGINE == "rbx"
+    end
+
+    # Whether or not this is running on JRuby.
+    #
+    # @return [Boolean]
+    def jruby?
+      RUBY_PLATFORM =~ /java/
+    end
+
+    # Returns an array of ints representing the JRuby version number.
+    #
+    # @return [Array<Fixnum>]
+    def jruby_version
+      $jruby_version ||= ::JRUBY_VERSION.split(".").map {|s| s.to_i}
+    end
+
+    # Like `Dir.glob`, but works with backslash-separated paths on Windows.
+    #
+    # @param path [String]
+    def glob(path, &block)
+      path = path.gsub('\\', '/') if windows?
+      Dir.glob(path, &block)
+    end
+
+    # Prepare a value for a destructuring assignment (e.g. `a, b =
+    # val`). This works around a performance bug when using
+    # ActiveSupport, and only needs to be called when `val` is likely
+    # to be `nil` reasonably often.
+    #
+    # See [this bug report](http://redmine.ruby-lang.org/issues/4917).
+    #
+    # @param val [Object]
+    # @return [Object]
+    def destructure(val)
+      val || []
+    end
+
     ## Cross-Ruby-Version Compatibility
+
+    # Whether or not this is running under a Ruby version under 2.0.
+    #
+    # @return [Boolean]
+    def ruby1?
+      Sass::Util::RUBY_VERSION[0] <= 1
+    end
 
     # Whether or not this is running under Ruby 1.8 or lower.
     #
@@ -405,6 +558,18 @@ module Sass
     # @return [Boolean]
     def ruby1_8_6?
       ruby1_8? && Sass::Util::RUBY_VERSION[2] < 7
+    end
+
+    # Wehter or not this is running under JRuby 1.6 or lower.
+    def jruby1_6?
+      jruby? && jruby_version[0] == 1 && jruby_version[1] < 7
+    end
+
+    # Whether or not this is running under MacRuby.
+    #
+    # @return [Boolean]
+    def macruby?
+      RUBY_ENGINE == 'macruby'
     end
 
     # Checks that the encoding of a string is valid in Ruby 1.9
@@ -436,7 +601,7 @@ module Sass
           line.encode(encoding)
         rescue Encoding::UndefinedConversionError => e
           yield <<MSG.rstrip, i + 1
-Invalid #{encoding.name} character #{e.error_char.dump}
+Invalid #{encoding.name} character #{undefined_conversion_error_char(e)}
 MSG
         end
       end
@@ -467,7 +632,8 @@ MSG
       # We allow any printable ASCII characters but double quotes in the charset decl
       bin = str.dup.force_encoding("BINARY")
       encoding = Sass::Util::ENCODINGS_TO_CHECK.find do |enc|
-        bin =~ Sass::Util::CHARSET_REGEXPS[enc]
+        re = Sass::Util::CHARSET_REGEXPS[enc]
+        re && bin =~ re
       end
       charset, bom = $1, $2
       if charset
@@ -508,6 +674,8 @@ MSG
             Regexp.new(/\A(?:#{_enc("\uFEFF", e)})?#{
               _enc('@charset "', e)}(.*?)#{_enc('"', e)}|\A(#{
               _enc("\uFEFF", e)})/)
+          rescue Encoding::ConverterNotFoundError => _
+            nil # JRuby on Java 5 doesn't support UTF-32
           rescue
             # /\A@charset "(.*?)"/
             Regexp.new(/\A#{_enc('@charset "', e)}(.*?)#{_enc('"', e)}/)
@@ -557,6 +725,24 @@ MSG
     # @return [Enumerator] The consed enumerator
     def enum_slice(enum, n)
       ruby1_8? ? enum.enum_slice(n) : enum.each_slice(n)
+    end
+
+    # Destructively removes all elements from an array that match a block, and
+    # returns the removed elements.
+    #
+    # @param array [Array] The array from which to remove elements.
+    # @yield [el] Called for each element.
+    # @yieldparam el [*] The element to test.
+    # @yieldreturn [Boolean] Whether or not to extract the element.
+    # @return [Array] The extracted elements.
+    def extract!(array)
+      out = []
+      array.reject! do |e|
+        next false unless yield e
+        out << e
+        true
+      end
+      out
     end
 
     # Returns the ASCII code of the given character.
@@ -612,6 +798,57 @@ MSG
       '"' + obj.gsub(/[\x00-\x7F]+/) {|s| s.inspect[1...-1]} + '"'
     end
 
+    # Extracts the non-string vlaues from an array containing both strings and non-strings.
+    # These values are replaced with escape sequences.
+    # This can be undone using \{#inject\_values}.
+    #
+    # This is useful e.g. when we want to do string manipulation
+    # on an interpolated string.
+    #
+    # The precise format of the resulting string is not guaranteed.
+    # However, it is guaranteed that newlines and whitespace won't be affected.
+    #
+    # @param arr [Array] The array from which values are extracted.
+    # @return [(String, Array)] The resulting string, and an array of extracted values.
+    def extract_values(arr)
+      values = []
+      return arr.map do |e|
+        next e.gsub('{', '{{') if e.is_a?(String)
+        values << e
+        next "{#{values.count - 1}}"
+      end.join, values
+    end
+
+    # Undoes \{#extract\_values} by transforming a string with escape sequences
+    # into an array of strings and non-string values.
+    #
+    # @param str [String] The string with escape sequences.
+    # @param values [Array] The array of values to inject.
+    # @return [Array] The array of strings and values.
+    def inject_values(str, values)
+      return [str.gsub('{{', '{')] if values.empty?
+      # Add an extra { so that we process the tail end of the string
+      result = (str + '{{').scan(/(.*?)(?:(\{\{)|\{(\d+)\})/m).map do |(pre, esc, n)|
+        [pre, esc ? '{' : '', n ? values[n.to_i] : '']
+      end.flatten(1)
+      result[-2] = '' # Get rid of the extra {
+      merge_adjacent_strings(result).reject {|s| s == ''}
+    end
+
+    # Allows modifications to be performed on the string form
+    # of an array containing both strings and non-strings.
+    #
+    # @param arr [Array] The array from which values are extracted.
+    # @yield [str] A block in which string manipulation can be done to the array.
+    # @yieldparam str [String] The string form of `arr`.
+    # @yieldreturn [String] The modified string.
+    # @return [Array] The modified, interpolated array.
+    def with_extracted_values(arr)
+      str, vals = extract_values(arr)
+      str = yield str
+      inject_values(str, vals)
+    end
+
     ## Static Method Stuff
 
     # The context in which the ERB for \{#def\_static\_method} will be run.
@@ -665,3 +902,5 @@ MSG
     end
   end
 end
+
+require 'sass/util/multibyte_string_scanner'

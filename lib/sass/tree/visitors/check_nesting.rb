@@ -2,13 +2,14 @@
 class Sass::Tree::Visitors::CheckNesting < Sass::Tree::Visitors::Base
   protected
 
+  def initialize
+    @parents = []
+  end
+
   def visit(node)
-    if error = (@parent && (
-          try_send("invalid_#{node_name @parent}_child?", @parent, node) ||
-          try_send("invalid_#{node_name node}_parent?", @parent, node))) ||
-        (@real_parent && (
-          try_send("invalid_#{node_name @real_parent}_real_child?", @real_parent, node) ||
-          try_send("invalid_#{node_name node}_real_parent?", @real_parent, node)))
+    if error = @parent && (
+        try_send("invalid_#{node_name @parent}_child?", @parent, node) ||
+        try_send("invalid_#{node_name node}_parent?", @parent, node))
       raise Sass::SyntaxError.new(error)
     end
     super
@@ -17,16 +18,18 @@ class Sass::Tree::Visitors::CheckNesting < Sass::Tree::Visitors::Base
     raise e
   end
 
-  PARENT_CLASSES = [ Sass::Tree::EachNode,   Sass::Tree::ForNode,   Sass::Tree::IfNode,
-                     Sass::Tree::ImportNode, Sass::Tree::MixinNode, Sass::Tree::WhileNode]
+  CONTROL_NODES = [Sass::Tree::EachNode, Sass::Tree::ForNode, Sass::Tree::IfNode,
+    Sass::Tree::WhileNode, Sass::Tree::TraceNode]
+  SCRIPT_NODES = [Sass::Tree::ImportNode] + CONTROL_NODES
   def visit_children(parent)
     old_parent = @parent
-    @parent = parent unless is_any_of?(parent, PARENT_CLASSES)
-    old_real_parent, @real_parent = @real_parent, parent
+    @parent = parent unless is_any_of?(parent, SCRIPT_NODES) ||
+      (parent.bubbles? && !old_parent.is_a?(Sass::Tree::RootNode))
+    @parents.push parent
     super
   ensure
     @parent = old_parent
-    @real_parent = old_real_parent
+    @parents.pop
   end
 
   def visit_root(node)
@@ -44,72 +47,82 @@ class Sass::Tree::Visitors::CheckNesting < Sass::Tree::Visitors::Base
     raise e
   end
 
+  def visit_mixindef(node)
+    @current_mixin_def, old_mixin_def = node, @current_mixin_def
+    yield
+  ensure
+    @current_mixin_def = old_mixin_def
+  end
+
+  def invalid_content_parent?(parent, child)
+    if @current_mixin_def
+      @current_mixin_def.has_content = true
+      nil
+    else
+      "@content may only be used within a mixin."
+    end
+  end
+
   def invalid_charset_parent?(parent, child)
     "@charset may only be used at the root of a document." unless parent.is_a?(Sass::Tree::RootNode)
   end
 
-  INVALID_EXTEND_PARENTS = [Sass::Tree::RuleNode, Sass::Tree::MixinDefNode]
+  VALID_EXTEND_PARENTS = [Sass::Tree::RuleNode, Sass::Tree::MixinDefNode, Sass::Tree::MixinNode]
   def invalid_extend_parent?(parent, child)
-    unless is_any_of?(parent, INVALID_EXTEND_PARENTS)
-      "Extend directives may only be used within rules."
+    unless is_any_of?(parent, VALID_EXTEND_PARENTS)
+      return "Extend directives may only be used within rules."
     end
   end
 
-  def invalid_function_parent?(parent, child)
-    "Functions may only be defined at the root of a document." unless parent.is_a?(Sass::Tree::RootNode)
-  end
-
-  INVALID_FUNCTION_CHILDREN = [
-    Sass::Tree::CommentNode,  Sass::Tree::DebugNode, Sass::Tree::EachNode,
-    Sass::Tree::ForNode,      Sass::Tree::IfNode,    Sass::Tree::ReturnNode,
-    Sass::Tree::VariableNode, Sass::Tree::WarnNode,  Sass::Tree::WhileNode
-  ]
-  def invalid_function_child?(parent, child)
-    unless is_any_of?(child, INVALID_FUNCTION_CHILDREN)
-      "Functions can only contain variable declarations and control directives."
-    end
-  end
-
-  INVALID_IMPORT_PARENTS = [
-    Sass::Tree::IfNode,   Sass::Tree::ForNode, Sass::Tree::WhileNode,
-    Sass::Tree::EachNode, Sass::Tree::MixinDefNode
-  ]
+  INVALID_IMPORT_PARENTS = CONTROL_NODES +
+    [Sass::Tree::MixinDefNode, Sass::Tree::MixinNode]
   def invalid_import_parent?(parent, child)
-    if is_any_of?(@real_parent, INVALID_IMPORT_PARENTS)
+    unless (@parents.map {|p| p.class} & INVALID_IMPORT_PARENTS).empty?
       return "Import directives may not be used within control directives or mixins."
     end
     return if parent.is_a?(Sass::Tree::RootNode)
     return "CSS import directives may only be used at the root of a document." if child.css_import?
-    # If this is a nested @import, we need to make sure it doesn't have anything
-    # that's legal at top-level but not in the current context (e.g. mixin defs).
-    child.imported_file.to_tree.children.each {|c| visit(c)}
-    nil
   rescue Sass::SyntaxError => e
     e.modify_backtrace(:filename => child.imported_file.options[:filename])
     e.add_backtrace(:filename => child.filename, :line => child.line)
     raise e
   end
 
-  def invalid_import_real_parent?(parent, child)
-
-  end
-
   def invalid_mixindef_parent?(parent, child)
-    "Mixins may only be defined at the root of a document." unless parent.is_a?(Sass::Tree::RootNode)
+    unless (@parents.map {|p| p.class} & INVALID_IMPORT_PARENTS).empty?
+      return "Mixins may not be defined within control directives or other mixins."
+    end
   end
 
-  INVALID_PROP_CHILDREN = [Sass::Tree::CommentNode, Sass::Tree::PropNode]
+  def invalid_function_parent?(parent, child)
+    unless (@parents.map {|p| p.class} & INVALID_IMPORT_PARENTS).empty?
+      return "Functions may not be defined within control directives or other mixins."
+    end
+  end
+
+  VALID_FUNCTION_CHILDREN = [
+    Sass::Tree::CommentNode,  Sass::Tree::DebugNode, Sass::Tree::ReturnNode,
+    Sass::Tree::VariableNode, Sass::Tree::WarnNode
+  ] + CONTROL_NODES
+  def invalid_function_child?(parent, child)
+    unless is_any_of?(child, VALID_FUNCTION_CHILDREN)
+      "Functions can only contain variable declarations and control directives."
+    end
+  end
+
+  VALID_PROP_CHILDREN = [Sass::Tree::CommentNode, Sass::Tree::PropNode, Sass::Tree::MixinNode] + CONTROL_NODES
   def invalid_prop_child?(parent, child)
-    unless is_any_of?(child, INVALID_PROP_CHILDREN)
+    unless is_any_of?(child, VALID_PROP_CHILDREN)
       "Illegal nesting: Only properties may be nested beneath properties."
     end
   end
 
-  INVALID_PROP_PARENTS = [Sass::Tree::RuleNode, Sass::Tree::PropNode,
-                          Sass::Tree::MixinDefNode, Sass::Tree::DirectiveNode]
+  VALID_PROP_PARENTS = [Sass::Tree::RuleNode, Sass::Tree::PropNode,
+                        Sass::Tree::MixinDefNode, Sass::Tree::DirectiveNode,
+                        Sass::Tree::MixinNode]
   def invalid_prop_parent?(parent, child)
-    unless is_any_of?(parent, INVALID_PROP_PARENTS)
-      "Properties are only allowed within rules, directives, or other properties." + child.pseudo_class_selector_message
+    unless is_any_of?(parent, VALID_PROP_PARENTS)
+      "Properties are only allowed within rules, directives, mixin includes, or other properties." + child.pseudo_class_selector_message
     end
   end
 
@@ -126,9 +139,9 @@ class Sass::Tree::Visitors::CheckNesting < Sass::Tree::Visitors::Base
     return false
   end
 
-  def try_send(method, *args, &block)
-    return unless respond_to?(method)
-    send(method, *args, &block)
+  def try_send(method, *args)
+    return unless respond_to?(method, true)
+    send(method, *args)
   end
 end
 

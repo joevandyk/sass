@@ -55,6 +55,14 @@ module Sass::Script
       [@operand1, @operand2]
     end
 
+    # @see Node#deep_copy
+    def deep_copy
+      node = dup
+      node.instance_variable_set('@operand1', @operand1.deep_copy)
+      node.instance_variable_set('@operand2', @operand2.deep_copy)
+      node
+    end
+
     protected
 
     # Evaluates the operation.
@@ -64,7 +72,19 @@ module Sass::Script
     # @raise [Sass::SyntaxError] if the operation is undefined for the operands
     def _perform(environment)
       literal1 = @operand1.perform(environment)
+
+      # Special-case :and and :or to support short-circuiting.
+      if @operator == :and
+        return literal1.to_bool ? @operand2.perform(environment) : literal1
+      elsif @operator == :or
+        return literal1.to_bool ? literal1 : @operand2.perform(environment)
+      end
+
       literal2 = @operand2.perform(environment)
+
+      if (literal1.is_a?(Null) || literal2.is_a?(Null)) && @operator != :eq && @operator != :neq
+        raise Sass::SyntaxError.new("Invalid null operation: \"#{literal1.inspect} #{@operator} #{literal2.inspect}\".")
+      end
 
       begin
         opts(literal1.send(@operator, literal2))

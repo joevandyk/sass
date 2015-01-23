@@ -4,11 +4,24 @@ require File.dirname(__FILE__) + '/test_helper'
 require 'sass/plugin'
 require 'fileutils'
 
+module Sass::Script::Functions
+  def filename
+    filename = options[:filename].gsub(%r{.*((/[^/]+){4})}, '\1')
+    Sass::Script::String.new(filename)
+  end
+
+  def whatever
+    custom = options[:custom]
+    whatever = custom && custom[:whatever]
+    Sass::Script::String.new(whatever || "incorrect")
+  end
+end
+
 class SassPluginTest < Test::Unit::TestCase
   @@templates = %w{
     complex script parent_ref import scss_import alt
     subdir/subdir subdir/nested_subdir/nested_subdir
-    options
+    options import_content filename_fn
   }
   @@templates += %w[import_charset import_charset_ibm866] unless Sass::Util.ruby1_8?
   @@templates << 'import_charset_1_8' if Sass::Util.ruby1_8?
@@ -110,6 +123,47 @@ CSS
     File.delete(tempfile_loc('bork1'))
   end
 
+  def test_full_exception_with_block_comment
+    File.delete(tempfile_loc('bork5'))
+    check_for_updates!
+    File.open(tempfile_loc('bork5')) do |file|
+      assert_equal(<<CSS.strip, file.read.split("\n")[0...7].join("\n"))
+/*
+Syntax error: Undefined variable: "$bork".
+        on line 3 of #{template_loc('bork5')}
+
+1: bork
+2:   /* foo *\\/
+3:   :bork $bork
+CSS
+    end
+    File.delete(tempfile_loc('bork1'))
+  end
+
+  def test_single_level_import_loop
+    File.delete(tempfile_loc('single_import_loop'))
+    check_for_updates!
+    File.open(tempfile_loc('single_import_loop')) do |file|
+      assert_equal(<<CSS.strip, file.read.split("\n")[0...2].join("\n"))
+/*
+Syntax error: An @import loop has been found: #{template_loc('single_import_loop')} imports itself
+CSS
+    end
+  end
+
+  def test_double_level_import_loop
+    File.delete(tempfile_loc('double_import_loop1'))
+    check_for_updates!
+    File.open(tempfile_loc('double_import_loop1')) do |file|
+      assert_equal(<<CSS.strip, file.read.split("\n")[0...4].join("\n"))
+/*
+Syntax error: An @import loop has been found:
+                  #{template_loc('double_import_loop1')} imports #{template_loc('_double_import_loop2')}
+                  #{template_loc('_double_import_loop2')} imports #{template_loc('double_import_loop1')}
+CSS
+    end
+  end
+
   def test_nonfull_exception_handling
     old_full_exception = Sass::Plugin.options[:full_exception]
     Sass::Plugin.options[:full_exception] = false
@@ -179,16 +233,24 @@ CSS
     assert_needs_update "basic"
   end
 
+  def test_import_same_name
+    assert_warning <<WARNING do
+WARNING: In #{template_loc}:
+  There are multiple files that match the name "same_name_different_partiality.scss":
+    _same_name_different_partiality.scss
+    same_name_different_partiality.scss
+WARNING
+      touch "_same_name_different_partiality"
+      assert_needs_update "same_name_different_partiality"
+    end
+  end
+
   # Callbacks
 
   def test_updating_stylesheets_callback
     # Should run even when there's nothing to update
+    Sass::Plugin.options[:template_location] = nil
     assert_callback :updating_stylesheets, []
-  end
-
-  def test_updating_stylesheets_callback_with_individual_files
-    files = [[template_loc("basic"), tempfile_loc("basic")]]
-    assert_callback(:updating_stylesheets, files) {Sass::Util.silence_sass_warnings{Sass::Plugin.update_stylesheets(files)}}
   end
 
   def test_updating_stylesheets_callback_with_never_update
@@ -196,25 +258,25 @@ CSS
     assert_no_callback :updating_stylesheets
   end
 
-  def test_updating_stylesheet_callback_for_updated_template
+  def test_updated_stylesheet_callback_for_updated_template
     Sass::Plugin.options[:always_update] = false
     touch 'basic'
-    assert_no_callback :updating_stylesheet, template_loc("complex"), tempfile_loc("complex") do
+    assert_no_callback :updated_stylesheet, template_loc("complex"), tempfile_loc("complex") do
       assert_callbacks(
-        [:updating_stylesheet, template_loc("basic"), tempfile_loc("basic")],
-        [:updating_stylesheet, template_loc("import"), tempfile_loc("import")])
+        [:updated_stylesheet, template_loc("basic"), tempfile_loc("basic")],
+        [:updated_stylesheet, template_loc("import"), tempfile_loc("import")])
     end
   end
 
-  def test_updating_stylesheet_callback_for_fresh_template
+  def test_updated_stylesheet_callback_for_fresh_template
     Sass::Plugin.options[:always_update] = false
-    assert_no_callback :updating_stylesheet
+    assert_no_callback :updated_stylesheet
   end
 
-  def test_updating_stylesheet_callback_for_error_template
+  def test_updated_stylesheet_callback_for_error_template
     Sass::Plugin.options[:always_update] = false
     touch 'bork1'
-    assert_no_callback :updating_stylesheet
+    assert_no_callback :updated_stylesheet
   end
 
   def test_not_updating_stylesheet_callback_for_fresh_template
@@ -226,8 +288,8 @@ CSS
     Sass::Plugin.options[:always_update] = false
     assert_callback :not_updating_stylesheet, template_loc("complex"), tempfile_loc("complex") do
       assert_no_callbacks(
-        [:updating_stylesheet, template_loc("basic"), tempfile_loc("basic")],
-        [:updating_stylesheet, template_loc("import"), tempfile_loc("import")])
+        [:updated_stylesheet, template_loc("basic"), tempfile_loc("basic")],
+        [:updated_stylesheet, template_loc("import"), tempfile_loc("import")])
     end
   end
 
@@ -301,7 +363,24 @@ CSS
     check_for_updates!
     assert_renders_correctly 'if'
   ensure
-    set_plugin_opts :cache_store => @@cache_store
+    set_plugin_opts
+  end
+
+  def test_cached_import_option
+    set_plugin_opts :custom => {:whatever => "correct"}
+    check_for_updates!
+    assert_renders_correctly "cached_import_option"
+
+    @@cache_store.reset!
+    set_plugin_opts :custom => nil, :always_update => false
+    check_for_updates!
+    assert_renders_correctly "cached_import_option"
+
+    set_plugin_opts :custom => {:whatever => "correct"}, :always_update => true
+    check_for_updates!
+    assert_renders_correctly "cached_import_option"
+  ensure
+    set_plugin_opts :custom => nil
   end
 
  private
@@ -347,19 +426,21 @@ CSS
 
   def assert_callback(name, *expected_args)
     run = false
+    received_args = nil
     Sass::Plugin.send("on_#{name}") do |*args|
-      run ||= expected_args.zip(args).all? do |ea, a|
-        ea.respond_to?(:call) ? ea.call(a) : ea == a
+      received_args = args
+      run ||= expected_args.zip(received_args).all? do |ea, ra|
+        ea.respond_to?(:call) ? ea.call(ra) : ea == ra
       end
     end
 
     if block_given?
-      yield
+      Sass::Util.silence_sass_warnings {yield}
     else
       check_for_updates!
     end
 
-    assert run, "Expected #{name} callback to be run with arguments:\n  #{expected_args.inspect}"
+    assert run, "Expected #{name} callback to be run with arguments:\n  #{expected_args.inspect}\nHowever, it got:\n  #{received_args.inspect}"
   end
 
   def assert_no_callback(name, *unexpected_args)

@@ -4,8 +4,10 @@ require 'test/unit'
 require 'fileutils'
 $:.unshift lib_dir unless $:.include?(lib_dir)
 require 'sass'
+require 'mathn' if ENV['MATHN'] == 'true'
 
 Sass::RAILS_LOADED = true unless defined?(Sass::RAILS_LOADED)
+Encoding.default_external = 'UTF-8' if defined?(Encoding)
 
 module Sass::Script::Functions
   def option(name)
@@ -42,6 +44,15 @@ class Test::Unit::TestCase
     else
       assert_equal message.strip, $stderr.string.strip
     end
+  ensure
+    $stderr = the_real_stderr
+  end
+
+  def assert_no_warning
+    the_real_stderr, $stderr = $stderr, StringIO.new
+    yield
+
+    assert_equal '', $stderr.string
   ensure
     $stderr = the_real_stderr
   end

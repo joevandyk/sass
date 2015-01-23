@@ -15,7 +15,6 @@ module Sass
     # Starts the read-eval-print loop.
     def run
       environment = Environment.new
-      environment.set_var('important', Script::String.new('!important'))
       @line = 0
       loop do
         @line += 1
@@ -35,8 +34,8 @@ module Sass
       case text
       when Script::MATCH
         name = $1
-        guarded = $3 == '||=' || $4
-        val = Script::Parser.parse($3, @line, text.size - $3.size)
+        guarded = !!$3
+        val = Script::Parser.parse($2, @line, text.size - ($3 || '').size - $2.size)
 
         unless guarded && environment.var(name)
           environment.set_var(name, val.perform(environment))
@@ -49,8 +48,8 @@ module Sass
     rescue Sass::SyntaxError => e
       puts "SyntaxError: #{e.message}"
       if @options[:trace]
-        e.backtrace.each do |e1|
-          puts "\tfrom #{e1}"
+        e.backtrace.each do |e|
+          puts "\tfrom #{e}"
         end
       end
     end

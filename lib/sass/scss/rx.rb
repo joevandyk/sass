@@ -51,6 +51,8 @@ module Sass
       UNICODE  = /\\#{H}{1,6}[ \t\r\n\f]?/
       s = if Sass::Util.ruby1_8?
             '\200-\377'
+          elsif Sass::Util.macruby?
+            '\u0080-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF'
           else
             '\u{80}-\u{D7FF}\u{E000}-\u{FFFD}\u{10000}-\u{10FFFF}'
           end
@@ -107,21 +109,25 @@ module Sass
       TILDE = /#{W}~/
       NOT = quote(":not(", Regexp::IGNORECASE)
 
+      # Defined in https://developer.mozilla.org/en/CSS/@-moz-document as a
+      # non-standard version of http://www.w3.org/TR/css3-conditional/
+      URL_PREFIX = /url-prefix\(#{W}(?:#{STRING}|#{URL})#{W}\)/i
+      DOMAIN = /domain\(#{W}(?:#{STRING}|#{URL})#{W}\)/i
+
       # Custom
       HEXCOLOR = /\#[0-9a-fA-F]+/
       INTERP_START = /#\{/
-      MOZ_ANY = quote(":-moz-any(", Regexp::IGNORECASE)
+      ANY = /:(-[-\w]+-)?any\(/i
+      OPTIONAL = /!#{W}optional/i
 
+      IDENT_HYPHEN_INTERP = /-(#\{)/
       STRING1_NOINTERP = /\"((?:[^\n\r\f\\"#]|#(?!\{)|\\#{NL}|#{ESCAPE})*)\"/
       STRING2_NOINTERP = /\'((?:[^\n\r\f\\'#]|#(?!\{)|\\#{NL}|#{ESCAPE})*)\'/
       STRING_NOINTERP = /#{STRING1_NOINTERP}|#{STRING2_NOINTERP}/
-      # Can't use IDENT here, because it seems to take exponential time on 1.8.
-      # We could use it for 1.9 only, but I don't want to introduce a cross-version
-      # behavior difference.
-      # In any case, almost all CSS idents will be matched by this.
-      STATIC_VALUE = /(-?#{NMSTART}|#{STRING_NOINTERP}|\s(?!%)|#[a-f0-9]|[,%]|#{NUM}|\!important)+(?=[;}])/i
 
-      STATIC_SELECTOR = /(#{NMCHAR}|\s|[,>+*]|[:#.]#{NMSTART})+(?=[{])/i
+      STATIC_COMPONENT = /#{IDENT}|#{STRING_NOINTERP}|#{HEXCOLOR}|[+-]?#{NUMBER}|\!important/i
+      STATIC_VALUE = /#{STATIC_COMPONENT}(\s*[\s,\/]\s*#{STATIC_COMPONENT})*([;}])/i
+      STATIC_SELECTOR = /(#{NMCHAR}|[ \t]|[,>+*]|[:#.]#{NMSTART}){0,50}([{])/i
     end
   end
 end

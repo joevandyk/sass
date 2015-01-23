@@ -6,31 +6,31 @@ module Sass::Tree
   # @see Sass::Tree
   class CommentNode < Node
     # The text of the comment, not including `/*` and `*/`.
+    # Interspersed with {Sass::Script::Node}s representing `#{}`-interpolation
+    # if this is a loud comment.
     #
-    # @return [String]
+    # @return [Array<String, Sass::Script::Node>]
     attr_accessor :value
 
-    # Whether the comment is loud.
+    # The text of the comment
+    # after any interpolated SassScript has been resolved.
+    # Only set once \{Tree::Visitors::Perform} has been run.
     #
-    # Loud comments start with ! and force the comment to be generated
-    # irrespective of compilation settings or the comment syntax used.
-    #
-    # @return [Boolean]
-    attr_accessor :loud
+    # @return [String]
+    attr_accessor :resolved_value
 
-    # Whether or not the comment is silent (that is, doesn't output to CSS).
+    # The type of the comment. `:silent` means it's never output to CSS,
+    # `:normal` means it's output in every compile mode except `:compressed`,
+    # and `:loud` means it's output even in `:compressed`.
     #
-    # @return [Boolean]
-    attr_accessor :silent
+    # @return [Symbol]
+    attr_accessor :type
 
-    # @param value [String] See \{#value}
-    # @param silent [Boolean] See \{#silent}
-    def initialize(value, silent)
-      @lines = []
-      @silent = silent
-      @value = normalize_indentation value
-      @loud = @value =~ %r{^(/[\/\*])?!}
-      @value.sub!("#{$1}!", $1.to_s) if @loud
+    # @param value [Array<String, Sass::Script::Node>] See \{#value}
+    # @param type [Symbol] See \{#type}
+    def initialize(value, type)
+      @value = Sass::Util.with_extracted_values(value) {|str| normalize_indentation str}
+      @type = type
       super()
     end
 
@@ -40,7 +40,7 @@ module Sass::Tree
     # @return [Boolean] Whether or not this node and the other object
     #   are the same
     def ==(other)
-      self.class == other.class && value == other.value && silent == other.silent
+      self.class == other.class && value == other.value && type == other.type
     end
 
     # Returns `true` if this is a silent comment
@@ -50,28 +50,33 @@ module Sass::Tree
     #
     # @return [Boolean]
     def invisible?
-      if @loud
-        return false
-      else
-        @silent || (style == :compressed)
+      case @type
+      when :loud; false
+      when :silent; true
+      else; style == :compressed
       end
     end
 
-    # Returns whether this comment should be interpolated for dynamic comment generation.
-    def evaluated?
-      @loud
+    # Returns the number of lines in the comment.
+    #
+    # @return [Fixnum]
+    def lines
+      @value.inject(0) do |s, e|
+        next s + e.count("\n") if e.is_a?(String)
+        next s
+      end
     end
 
     private
 
     def normalize_indentation(str)
-      pre = str.split("\n").inject(str[/^[ \t]*/].split("")) do |pre1, line|
-        line[/^[ \t]*/].split("").zip(pre1).inject([]) do |arr, (a, b)|
+      ind = str.split("\n").inject(str[/^[ \t]*/].split("")) do |pre, line|
+        line[/^[ \t]*/].split("").zip(pre).inject([]) do |arr, (a, b)|
           break arr if a != b
-          arr + [a]
+          arr << a
         end
       end.join
-      str.gsub(/^#{pre}/, '')
+      str.gsub(/^#{ind}/, '')
     end
   end
 end

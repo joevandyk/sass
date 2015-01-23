@@ -18,6 +18,13 @@ module Sass
   # Finally, {Simple} is the superclass of the simplest selectors,
   # such as `.foo` or `#bar`.
   module Selector
+    # The base used for calculating selector specificity. The spec says this
+    # should be "sufficiently high"; it's extremely unlikely that any single
+    # selector sequence will contain 1,000 simple selectors.
+    #
+    # @type [Fixnum]
+    SPECIFICITY_BASE = 1_000
+
     # A parent-referencing selector (`&` in Sass).
     # The function of this is to be replaced by the parent selector
     # in the nested hierarchy.
@@ -52,6 +59,11 @@ module Sass
       def to_a
         [".", *@name]
       end
+
+      # @see AbstractSequence#specificity
+      def specificity
+        SPECIFICITY_BASE
+      end
     end
 
     # An id selector (e.g. `#foo`).
@@ -78,6 +90,37 @@ module Sass
       def unify(sels)
         return if sels.any? {|sel2| sel2.is_a?(Id) && self.name != sel2.name}
         super
+      end
+
+      # @see AbstractSequence#specificity
+      def specificity
+        SPECIFICITY_BASE**2
+      end
+    end
+
+    # A placeholder selector (e.g. `%foo`).
+    # This exists to be replaced via `@extend`.
+    # Rulesets using this selector will not be printed, but can be extended.
+    # Otherwise, this acts just like a class selector.
+    class Placeholder < Simple
+      # The placeholder name.
+      #
+      # @return [Array<String, Sass::Script::Node>]
+      attr_reader :name
+
+      # @param name [Array<String, Sass::Script::Node>] The placeholder name
+      def initialize(name)
+        @name = name
+      end
+
+      # @see Selector#to_a
+      def to_a
+        ["%", *@name]
+      end
+
+      # @see AbstractSequence#specificity
+      def specificity
+        0
       end
     end
 
@@ -141,6 +184,11 @@ module Sass
         return unless accept
         [name == :universal ? Universal.new(ns) : Element.new(name, ns)] + sels[1..-1]
       end
+
+      # @see AbstractSequence#specificity
+      def specificity
+        0
+      end
     end
 
     # An element selector (e.g. `h1`).
@@ -203,6 +251,11 @@ module Sass
         return unless accept
         [Element.new(name, ns)] + sels[1..-1]
       end
+
+      # @see AbstractSequence#specificity
+      def specificity
+        1
+      end
     end
 
     # Selector interpolation (`#{}` in Sass).
@@ -256,15 +309,22 @@ module Sass
       # @return [Array<String, Sass::Script::Node>]
       attr_reader :value
 
+      # Flags for the attribute selector (e.g. `i`).
+      #
+      # @return [Array<String, Sass::Script::Node>]
+      attr_reader :flags
+
       # @param name [Array<String, Sass::Script::Node>] The attribute name
       # @param namespace [Array<String, Sass::Script::Node>, nil] See \{#namespace}
       # @param operator [String] The matching operator, e.g. `"="` or `"^="`
       # @param value [Array<String, Sass::Script::Node>] See \{#value}
-      def initialize(name, namespace, operator, value)
+      # @param value [Array<String, Sass::Script::Node>] See \{#flags}
+      def initialize(name, namespace, operator, value, flags)
         @name = name
         @namespace = namespace
         @operator = operator
         @value = value
+        @flags = flags
       end
 
       # @see Selector#to_a
@@ -273,7 +333,13 @@ module Sass
         res.concat(@namespace) << "|" if @namespace
         res.concat @name
         (res << @operator).concat @value if @value
+        (res << " ").concat @flags if @flags
         res << "]"
+      end
+
+      # @see AbstractSequence#specificity
+      def specificity
+        SPECIFICITY_BASE
       end
     end
 
@@ -286,6 +352,13 @@ module Sass
       #
       # @return [Symbol]
       attr_reader :type
+
+      # Some psuedo-class-syntax selectors (`:after` and `:before)
+      # are actually considered pseudo-elements
+      # and must be at the end of the selector to function properly.
+      #
+      # @return [Array<String>]
+      FINAL_SELECTORS = %w[after before]
 
       # The name of the selector.
       #
@@ -312,6 +385,10 @@ module Sass
         @arg = arg
       end
 
+      def final?
+        type == :class && FINAL_SELECTORS.include?(name.first)
+      end
+
       # @see Selector#to_a
       def to_a
         res = [@type == :class ? ":" : "::"] + @name
@@ -319,8 +396,8 @@ module Sass
         res
       end
 
-      # Returns `nil` if this is a pseudoclass selector
-      # and `sels` contains a pseudoclass selector different than this one.
+      # Returns `nil` if this is a pseudoelement selector
+      # and `sels` contains a pseudoelement selector different than this one.
       #
       # @see Selector#unify
       def unify(sels)
@@ -328,7 +405,13 @@ module Sass
           sel.is_a?(Pseudo) && sel.type == :element &&
             (sel.name != self.name || sel.arg != self.arg)
         end
+        return sels + [self] if final?
         super
+      end
+
+      # @see AbstractSequence#specificity
+      def specificity
+        type == :class ? SPECIFICITY_BASE : 1
       end
     end
 
@@ -346,7 +429,7 @@ module Sass
       attr_reader :selector
 
       # @param [String] The name of the pseudoclass
-      # @param [Selector::Sequence] The selector argument
+      # @param [Selector::CommaSequence] The selector argument
       def initialize(name, selector)
         @name = name
         @selector = selector
@@ -355,6 +438,11 @@ module Sass
       # @see Selector#to_a
       def to_a
         [":", @name, "("] + @selector.to_a + [")"]
+      end
+
+      # @see AbstractSequence#specificity
+      def specificity
+        SPECIFICITY_BASE
       end
     end
   end

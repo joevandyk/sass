@@ -5,8 +5,8 @@ module Sass
     # @see Sass::Tree
     class DebugNode < Node
       # The expression to print.
-      # @return [Script::Node]
-      attr_reader :expr
+      # @return [Script::Node] 
+      attr_accessor :expr
 
       # @param expr [Script::Node] The expression to print
       def initialize(expr)

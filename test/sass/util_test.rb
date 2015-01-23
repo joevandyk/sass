@@ -120,6 +120,23 @@ class UtilTest < Test::Unit::TestCase
       lcs([-5, 3, 2, 8], [-4, 1, 8]) {|a, b| (a - b).abs <= 1 && [a, b].max})
   end
 
+  def test_group_by_to_a
+    assert_equal([[1, [1, 3, 5, 7]], [0, [2, 4, 6, 8]]],
+      group_by_to_a(1..8) {|i| i % 2})
+    assert_equal([[1, [1, 4, 7, 10]], [2, [2, 5, 8, 11]], [0, [3, 6, 9, 12]]],
+      group_by_to_a(1..12) {|i| i % 3})
+  end
+
+  def test_subsequence
+    assert(subsequence?([1, 2, 3], [1, 2, 3]))
+    assert(subsequence?([1, 2, 3], [1, :a, 2, :b, 3]))
+    assert(subsequence?([1, 2, 3], [:a, 1, :b, :c, 2, :d, 3, :e, :f]))
+
+    assert(!subsequence?([1, 2, 3], [1, 2]))
+    assert(!subsequence?([1, 2, 3], [1, 3, 2]))
+    assert(!subsequence?([1, 2, 3], [3, 2, 1]))
+  end
+
   def test_silence_warnings
     old_stderr, $stderr = $stderr, StringIO.new
     warn "Out"
@@ -157,6 +174,12 @@ class UtilTest < Test::Unit::TestCase
   def test_enum_cons
     assert_equal(%w[foobar barbaz],
       enum_cons(%w[foo bar baz], 2).map {|s1, s2| "#{s1}#{s2}"})
+  end
+
+  def test_extract
+    arr = [1, 2, 3, 4, 5]
+    assert_equal([1, 3, 5], extract!(arr) {|e| e % 2 == 1})
+    assert_equal([2, 4], arr)
   end
 
   def test_ord
@@ -208,6 +231,26 @@ class UtilTest < Test::Unit::TestCase
     assert(set_eql?(s1, s2))
   end
 
+  def test_extract_and_inject_values
+    test = lambda {|arr| assert_equal(arr, with_extracted_values(arr) {|str| str})}
+
+    test[['foo bar']]
+    test[['foo {12} bar']]
+    test[['foo {{12} bar']]
+    test[['foo {{1', 12, '2} bar']]
+    test[['foo 1', 2, '{3', 4, 5, 6, '{7}', 8]]
+    test[['foo 1', [2, 3, 4], ' bar']]
+    test[['foo ', 1, "\n bar\n", [2, 3, 4], "\n baz"]]
+  end
+
+  def nested_caller_info_fn
+    caller_info
+  end
+
+  def double_nested_caller_info_fn
+    nested_caller_info_fn
+  end
+
   def test_caller_info
     assert_equal(["/tmp/foo.rb", 12, "fizzle"], caller_info("/tmp/foo.rb:12: in `fizzle'"))
     assert_equal(["/tmp/foo.rb", 12, nil], caller_info("/tmp/foo.rb:12"))
@@ -215,6 +258,22 @@ class UtilTest < Test::Unit::TestCase
     assert_equal(["", 12, "boop"], caller_info(":12: in `boop'"))
     assert_equal(["/tmp/foo.rb", -12, "fizzle"], caller_info("/tmp/foo.rb:-12: in `fizzle'"))
     assert_equal(["/tmp/foo.rb", 12, "fizzle"], caller_info("/tmp/foo.rb:12: in `fizzle {}'"))
+
+    info = nested_caller_info_fn
+    assert_equal(__FILE__, info[0])
+    assert_equal("test_caller_info", info[2])
+
+    info = proc {nested_caller_info_fn}.call
+    assert_equal(__FILE__, info[0])
+    assert_match(/^(block in )?test_caller_info$/, info[2])
+
+    info = double_nested_caller_info_fn
+    assert_equal(__FILE__, info[0])
+    assert_equal("double_nested_caller_info_fn", info[2])
+
+    info = proc {double_nested_caller_info_fn}.call
+    assert_equal(__FILE__, info[0])
+    assert_equal("double_nested_caller_info_fn", info[2])
   end
 
   def test_version_gt

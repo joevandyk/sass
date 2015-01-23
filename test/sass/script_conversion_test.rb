@@ -24,7 +24,7 @@ class SassScriptConversionTest < Test::Unit::TestCase
     assert_renders "12px"
     assert_renders "12.45px"
 
-    assert_equal "12.346", render("12.345678901")
+    assert_equal "12.34568", render("12.345678901")
   end
 
   def test_string
@@ -69,11 +69,25 @@ class SassScriptConversionTest < Test::Unit::TestCase
     assert_renders "$flaznicate"
   end
 
+  def test_null
+    assert_renders "null"
+  end
+
+  def test_empty_list
+    assert_renders "()"
+  end
+
+  def test_list_in_args
+    assert_renders "foo((a, b, c))"
+    assert_renders "foo($arg: (a, b, c))"
+    assert_renders "foo(a, b, (a, b, c)...)"
+  end
+
   def self.test_precedence(outer, inner)
     op_outer = Sass::Script::Lexer::OPERATORS_REVERSE[outer]
     op_inner = Sass::Script::Lexer::OPERATORS_REVERSE[inner]
     class_eval <<RUBY
-      def test_precedence_#{outer}_#{inner}
+      def test_precedence_#{outer}_#{inner} 
         assert_renders "$foo #{op_outer} $bar #{op_inner} $baz"
         assert_renders "$foo #{op_inner} $bar #{op_outer} $baz"
 
@@ -92,7 +106,7 @@ RUBY
     op = separator_for(op_name)
     sibling = separator_for(sibling_name)
     class_eval <<RUBY
-      def test_associative_#{op_name}_#{sibling_name}
+      def test_associative_#{op_name}_#{sibling_name} 
         assert_renders "$foo#{op}$bar#{op}$baz"
 
         assert_equal "$foo#{op}$bar#{op}$baz",
@@ -120,7 +134,7 @@ RUBY
     op = Sass::Script::Lexer::OPERATORS_REVERSE[op_name]
     sibling = Sass::Script::Lexer::OPERATORS_REVERSE[sibling_name]
     class_eval <<RUBY
-      def test_non_associative_#{op_name}_#{sibling_name}
+      def test_non_associative_#{op_name}_#{sibling_name} 
         assert_renders "$foo #{op} $bar #{op} $baz"
 
         assert_renders "$foo #{op} ($bar #{op} $baz)"
@@ -223,6 +237,8 @@ RUBY
     assert_renders '#{1 + 2}, #{3 + 4}'
     assert_renders '#{1 + 2} ,#{3 + 4}'
     assert_renders '#{1 + 2},#{3 + 4}'
+    assert_renders '#{1 + 2}, #{3 + 4}, #{5 + 6}'
+    assert_renders '3, #{3 + 4}, 11'
 
     assert_renders '3 / #{3 + 4}'
     assert_renders '3 /#{3 + 4}'

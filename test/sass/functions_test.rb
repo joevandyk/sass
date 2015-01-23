@@ -47,25 +47,29 @@ class SassFunctionTest < Test::Unit::TestCase
     hsls, rgbs = chunk.strip.split("====")
     hsls.strip.split("\n").zip(rgbs.strip.split("\n")) do |hsl, rgb|
       hsl_method = "test_hsl: #{hsl} = #{rgb}"
-      define_method(hsl_method) do
-        assert_equal(evaluate(rgb), evaluate(hsl))
+      unless method_defined?(hsl_method)
+        define_method(hsl_method) do
+          assert_equal(evaluate(rgb), evaluate(hsl))
+        end
       end
 
       rgb_to_hsl_method = "test_rgb_to_hsl: #{rgb} = #{hsl}"
-      define_method(rgb_to_hsl_method) do
-        rgb_color = perform(rgb)
-        hsl_color = perform(hsl)
+      unless method_defined?(rgb_to_hsl_method)
+        define_method(rgb_to_hsl_method) do
+          rgb_color = perform(rgb)
+          hsl_color = perform(hsl)
 
-        white = hsl_color.lightness == 100
-        black = hsl_color.lightness == 0
-        grayscale = white || black || hsl_color.saturation == 0
+          white = hsl_color.lightness == 100
+          black = hsl_color.lightness == 0
+          grayscale = white || black || hsl_color.saturation == 0
 
-        assert_in_delta(hsl_color.hue, rgb_color.hue, 0.0001,
-          "Hues should be equal") unless grayscale
-        assert_in_delta(hsl_color.saturation, rgb_color.saturation, 0.0001,
-          "Saturations should be equal") unless white || black
-        assert_in_delta(hsl_color.lightness, rgb_color.lightness, 0.0001,
-          "Lightnesses should be equal")
+          assert_in_delta(hsl_color.hue, rgb_color.hue, 0.0001,
+            "Hues should be equal") unless grayscale
+          assert_in_delta(hsl_color.saturation, rgb_color.saturation, 0.0001,
+            "Saturations should be equal") unless white || black
+          assert_in_delta(hsl_color.lightness, rgb_color.lightness, 0.0001,
+            "Lightnesses should be equal")
+        end
       end
     end
   end
@@ -76,7 +80,7 @@ class SassFunctionTest < Test::Unit::TestCase
 
   def test_hsl_checks_bounds
     assert_error_message("Saturation -114 must be between 0% and 100% for `hsl'", "hsl(10, -114, 12)");
-    assert_error_message("Lightness 256 must be between 0% and 100% for `hsl'", "hsl(10, 10, 256%)");
+    assert_error_message("Lightness 256% must be between 0% and 100% for `hsl'", "hsl(10, 10, 256%)");
   end
 
   def test_hsl_checks_types
@@ -94,7 +98,7 @@ class SassFunctionTest < Test::Unit::TestCase
 
   def test_hsla_checks_bounds
     assert_error_message("Saturation -114 must be between 0% and 100% for `hsla'", "hsla(10, -114, 12, 1)");
-    assert_error_message("Lightness 256 must be between 0% and 100% for `hsla'", "hsla(10, 10, 256%, 0)");
+    assert_error_message("Lightness 256% must be between 0% and 100% for `hsla'", "hsla(10, 10, 256%, 0)");
     assert_error_message("Alpha channel -0.1 must be between 0 and 1 for `hsla'", "hsla(10, 10, 10, -0.1)");
     assert_error_message("Alpha channel 1.1 must be between 0 and 1 for `hsla'", "hsla(10, 10, 10, 1.1)");
   end
@@ -154,39 +158,59 @@ class SassFunctionTest < Test::Unit::TestCase
     assert_error_message("#aaaaaa is not a number for `abs'", "abs(#aaa)")
   end
 
+  def test_min
+    #assert_equal("1", evaluate("min(1, 2, 3)"))
+    assert_equal("1", evaluate("min(3px, 2px, 1)"))
+    assert_equal("4em", evaluate("min(4em)"))
+    assert_equal("10cm", evaluate("min(10cm, 6in)"))
+
+    assert_error_message("#aaaaaa is not a number for `min'", "min(#aaa)")
+    assert_error_message("Incompatible units: 'px' and 'em'.", "min(3em, 4em, 1px)")
+  end
+
+  def test_max
+    assert_equal("3", evaluate("max(1, 2, 3)"))
+    assert_equal("3", evaluate("max(3, 2px, 1px)"))
+    assert_equal("4em", evaluate("max(4em)"))
+    assert_equal("6in", evaluate("max(10cm, 6in)"))
+
+    assert_error_message("#aaaaaa is not a number for `max'", "max(#aaa)")
+    assert_error_message("Incompatible units: 'px' and 'em'.", "max(3em, 4em, 1px)")
+  end
+
   def test_rgb
     assert_equal("#123456", evaluate("rgb(18, 52, 86)"))
     assert_equal("#beaded", evaluate("rgb(190, 173, 237)"))
-    assert_equal("#00ff7f", evaluate("rgb(0, 255, 127)"))
-    assert_equal("#00ff7f", evaluate("rgb($red: 0, $green: 255, $blue: 127)"))
+    assert_equal("springgreen", evaluate("rgb(0, 255, 127)"))
+    assert_equal("springgreen", evaluate("rgb($red: 0, $green: 255, $blue: 127)"))
   end
 
   def test_rgb_percent
     assert_equal("#123456", evaluate("rgb(7.1%, 20.4%, 34%)"))
     assert_equal("#beaded", evaluate("rgb(74.7%, 173, 93%)"))
     assert_equal("#beaded", evaluate("rgb(190, 68%, 237)"))
-    assert_equal("#00ff7f", evaluate("rgb(0%, 100%, 50%)"))
+    assert_equal("springgreen", evaluate("rgb(0%, 100%, 50%)"))
   end
 
   def test_rgb_tests_bounds
-    assert_error_message("Color value 256 must be between 0 and 255 inclusive for `rgb'",
+    assert_error_message("Color value 256 must be between 0 and 255 for `rgb'",
       "rgb(256, 1, 1)")
-    assert_error_message("Color value 256 must be between 0 and 255 inclusive for `rgb'",
+    assert_error_message("Color value 256 must be between 0 and 255 for `rgb'",
       "rgb(1, 256, 1)")
-    assert_error_message("Color value 256 must be between 0 and 255 inclusive for `rgb'",
+    assert_error_message("Color value 256 must be between 0 and 255 for `rgb'",
       "rgb(1, 1, 256)")
-    assert_error_message("Color value 256 must be between 0 and 255 inclusive for `rgb'",
+    assert_error_message("Color value 256 must be between 0 and 255 for `rgb'",
       "rgb(1, 256, 257)")
-    assert_error_message("Color value -1 must be between 0 and 255 inclusive for `rgb'",
+    assert_error_message("Color value -1 must be between 0 and 255 for `rgb'",
       "rgb(-1, 1, 1)")
   end
 
   def test_rgb_test_percent_bounds
-    assert_error_message("Color value 100.1% must be between 0% and 100% inclusive for `rgb'",
+    assert_error_message("Color value 100.1% must be between 0% and 100% for `rgb'",
       "rgb(100.1%, 0, 0)")
-    assert_error_message("Color value -0.1% must be between 0% and 100% inclusive for `rgb'",
+    assert_error_message("Color value -0.1% must be between 0% and 100% for `rgb'",
       "rgb(0, -0.1%, 0)")
-    assert_error_message("Color value 101% must be between 0% and 100% inclusive for `rgb'",
+    assert_error_message("Color value 101% must be between 0% and 100% for `rgb'",
       "rgb(0, 0, 101%)")
   end
 
@@ -203,20 +227,20 @@ class SassFunctionTest < Test::Unit::TestCase
     assert_equal("rgba(0, 255, 127, 0)", evaluate("rgba($red: 0, $green: 255, $blue: 127, $alpha: 0)"))
   end
 
-  def test_rgb_tests_bounds
-    assert_error_message("Color value 256 must be between 0 and 255 inclusive for `rgba'",
+  def test_rgba_tests_bounds
+    assert_error_message("Color value 256 must be between 0 and 255 for `rgba'",
       "rgba(256, 1, 1, 0.3)")
-    assert_error_message("Color value 256 must be between 0 and 255 inclusive for `rgba'",
+    assert_error_message("Color value 256 must be between 0 and 255 for `rgba'",
       "rgba(1, 256, 1, 0.3)")
-    assert_error_message("Color value 256 must be between 0 and 255 inclusive for `rgba'",
+    assert_error_message("Color value 256 must be between 0 and 255 for `rgba'",
       "rgba(1, 1, 256, 0.3)")
-    assert_error_message("Color value 256 must be between 0 and 255 inclusive for `rgba'",
+    assert_error_message("Color value 256 must be between 0 and 255 for `rgba'",
       "rgba(1, 256, 257, 0.3)")
-    assert_error_message("Color value -1 must be between 0 and 255 inclusive for `rgba'",
+    assert_error_message("Color value -1 must be between 0 and 255 for `rgba'",
       "rgba(-1, 1, 1, 0.3)")
-    assert_error_message("Alpha channel -0.2 must be between 0 and 1 inclusive for `rgba'",
+    assert_error_message("Alpha channel -0.2 must be between 0 and 1 for `rgba'",
       "rgba(1, 1, 1, -0.2)")
-    assert_error_message("Alpha channel 1.2 must be between 0 and 1 inclusive for `rgba'",
+    assert_error_message("Alpha channel 1.2 must be between 0 and 1 for `rgba'",
       "rgba(1, 1, 1, 1.2)")
   end
 
@@ -310,6 +334,18 @@ class SassFunctionTest < Test::Unit::TestCase
 
   def test_alpha_exception
     assert_error_message("12 is not a color for `alpha'", "alpha(12)")
+  end
+
+  def test_opacity
+    assert_equal("1", evaluate("opacity(#123456)"))
+    assert_equal("0.34", evaluate("opacity(rgba(0, 1, 2, 0.34))"))
+    assert_equal("0", evaluate("opacity(hsla(0, 1, 2, 0))"))
+    assert_equal("0", evaluate("opacity($color: hsla(0, 1, 2, 0))"))
+    assert_equal("opacity(20%)", evaluate("opacity(20%)"))
+  end
+
+  def test_opacity_exception
+    assert_error_message("\"foo\" is not a color for `opacity'", "opacity(foo)")
   end
 
   def test_opacify
@@ -411,6 +447,7 @@ class SassFunctionTest < Test::Unit::TestCase
     assert_equal("#88aa88", evaluate("saturate(#8a8, 0%)"))
     assert_equal("rgba(158, 63, 63, 0.5)", evaluate("saturate(rgba(136, 85, 85, 0.5), 20%)"))
     assert_equal("rgba(158, 63, 63, 0.5)", evaluate("saturate($color: rgba(136, 85, 85, 0.5), $amount: 20%)"))
+    assert_equal("saturate(50%)", evaluate("saturate(50%)"))
   end
 
   def test_saturate_tests_bounds
@@ -713,15 +750,15 @@ class SassFunctionTest < Test::Unit::TestCase
 
   def test_change_color_argument_errors
     # Range
-    assert_error_message("Saturation must be between 0 and 100 for `change-color'",
+    assert_error_message("Saturation 101% must be between 0% and 100% for `change-color'",
       "change-color(blue, $saturation: 101%)")
-    assert_error_message("Lightness must be between 0 and 100 for `change-color'",
+    assert_error_message("Lightness 101% must be between 0% and 100% for `change-color'",
       "change-color(blue, $lightness: 101%)")
-    assert_error_message("Red value must be between 0 and 255 for `change-color'",
+    assert_error_message("Red value -1 must be between 0 and 255 for `change-color'",
       "change-color(blue, $red: -1)")
-    assert_error_message("Green value must be between 0 and 255 for `change-color'",
+    assert_error_message("Green value 256 must be between 0 and 255 for `change-color'",
       "change-color(blue, $green: 256)")
-    assert_error_message("Blue value must be between 0 and 255 for `change-color'",
+    assert_error_message("Blue value 500 must be between 0 and 255 for `change-color'",
       "change-color(blue, $blue: 500)")
 
     # Unknown argument
@@ -733,6 +770,13 @@ class SassFunctionTest < Test::Unit::TestCase
     # HSL/RGB
     assert_error_message("Cannot specify HSL and RGB values for a color at the same time for `change-color'",
       "change-color(blue, $lightness: 10%, $red: 120)");
+  end
+
+  def test_ie_hex_str
+    assert_equal("#FFAA11CC", evaluate('ie-hex-str(#aa11cc)'))
+    assert_equal("#FFAA11CC", evaluate('ie-hex-str(#a1c)'))
+    assert_equal("#FFAA11CC", evaluate('ie-hex-str(#A1c)'))
+    assert_equal("#80FF0000", evaluate('ie-hex-str(rgba(255, 0, 0, 0.5))'))
   end
 
   def test_mix
@@ -772,6 +816,9 @@ class SassFunctionTest < Test::Unit::TestCase
     assert_equal("white", evaluate("grayscale(white)"))
     assert_equal("black", evaluate("grayscale(black)"))
     assert_equal("black", evaluate("grayscale($color: black)"))
+
+    assert_equal("grayscale(2)", evaluate("grayscale(2)"))
+    assert_equal("grayscale(-5px)", evaluate("grayscale(-5px)"))
   end
 
   def tets_grayscale_tests_types
@@ -780,8 +827,8 @@ class SassFunctionTest < Test::Unit::TestCase
 
   def test_complement
     assert_equal("#ccbbaa", evaluate("complement(#abc)"))
-    assert_equal("aqua", evaluate("complement(red)"))
-    assert_equal("red", evaluate("complement(aqua)"))
+    assert_equal("cyan", evaluate("complement(red)"))
+    assert_equal("red", evaluate("complement(cyan)"))
     assert_equal("white", evaluate("complement(white)"))
     assert_equal("black", evaluate("complement(black)"))
     assert_equal("black", evaluate("complement($color: black)"))
@@ -794,6 +841,7 @@ class SassFunctionTest < Test::Unit::TestCase
   def test_invert
     assert_equal("#112233", evaluate("invert(#edc)"))
     assert_equal("rgba(245, 235, 225, 0.5)", evaluate("invert(rgba(10, 20, 30, 0.5))"))
+    assert_equal("invert(20%)", evaluate("invert(20%)"))
   end
 
   def test_invert_tests_types
@@ -841,6 +889,7 @@ MSG
     assert_equal("bool", evaluate("type-of(true)"))
     assert_equal("color", evaluate("type-of(#fff)"))
     assert_equal("color", evaluate("type-of($value: #fff)"))
+    assert_equal("null", evaluate("type-of(null)"))
   end
 
   def test_unit
@@ -848,7 +897,8 @@ MSG
     assert_equal(%Q{"px"}, evaluate("unit(100px)"))
     assert_equal(%Q{"em*px"}, evaluate("unit(10px * 5em)"))
     assert_equal(%Q{"em*px"}, evaluate("unit(5em * 10px)"))
-    assert_equal(%Q{"em*px/cm*rem"}, evaluate("unit(10px * 5em / 30cm / 1rem)"))
+    assert_equal(%Q{"em/rem"}, evaluate("unit(10px * 5em / 30cm / 1rem)"))
+    assert_equal(%Q{"em*vh/cm*rem"}, evaluate("unit(10vh * 5em / 30cm / 1rem)"))
     assert_equal(%Q{"px"}, evaluate("unit($number: 100px)"))
     assert_error_message("#ff0000 is not a number for `unit'", "unit(#f00)")
   end
@@ -968,19 +1018,29 @@ MSG
   def test_zip
     assert_equal("1 3 5, 2 4 6", evaluate("zip(1 2, 3 4, 5 6)"))
     assert_equal("1 4 7, 2 5 8", evaluate("zip(1 2 3, 4 5 6, 7 8)"))
+    assert_equal("1 2 3", evaluate("zip(1, 2, 3)"))
   end
 
   def test_index
     assert_equal("1", evaluate("index(1px solid blue, 1px)"))
     assert_equal("2", evaluate("index(1px solid blue, solid)"))
     assert_equal("3", evaluate("index(1px solid blue, #00f)"))
+    assert_equal("1", evaluate("index(1px, 1px)"))
     assert_equal("false", evaluate("index(1px solid blue, 1em)"))
     assert_equal("false", evaluate("index(1px solid blue, notfound)"))
+    assert_equal("false", evaluate("index(1px, #00f)"))
   end
 
   def test_if
     assert_equal("1px", evaluate("if(true, 1px, 2px)"))
     assert_equal("2px", evaluate("if(false, 1px, 2px)"))
+    assert_equal("2px", evaluate("if(null, 1px, 2px)"))
+  end
+
+  def test_counter
+    assert_equal("counter(foo)", evaluate("counter(foo)"))
+    assert_equal('counter(item,".")', evaluate('counter(item, ".")'))
+    assert_equal('counter(item,".")', evaluate('counter(item,".")'))
   end
 
   def test_keyword_args_rgb
@@ -993,21 +1053,45 @@ MSG
   end
 
   def test_keyword_args_rgba_with_extra_args
-    assert_equal(%Q{rgba(255, 255, 255, 0.5)}, evaluate("rgba($red: 255, $green: 255, $blue: 255, $alpha: 0.5, $extra: error)"))
+    evaluate("rgba($red: 255, $green: 255, $blue: 255, $alpha: 0.5, $extra: error)")
+    flunk("Expected exception")
   rescue Sass::SyntaxError => e
-    assert_equal("Function rgba doesn't take an argument named $extra", e.message)
+    assert_equal("Function rgba doesn't have an argument named $extra", e.message)
   end
 
   def test_keyword_args_must_have_signature
     evaluate("no-kw-args($fake: value)")
+    flunk("Expected exception")
   rescue Sass::SyntaxError => e
     assert_equal("Function no_kw_args doesn't support keyword arguments", e.message)
   end
 
   def test_keyword_args_with_missing_argument
     evaluate("rgb($red: 255, $green: 255)")
+    flunk("Expected exception")
   rescue Sass::SyntaxError => e
     assert_equal("Function rgb requires an argument named $blue", e.message)
+  end
+
+  def test_keyword_args_with_extra_argument
+    evaluate("rgb($red: 255, $green: 255, $blue: 255, $purple: 255)")
+    flunk("Expected exception")
+  rescue Sass::SyntaxError => e
+    assert_equal("Function rgb doesn't have an argument named $purple", e.message)
+  end
+
+  def test_keyword_args_with_positional_and_keyword_argument
+    evaluate("rgb(255, 255, 255, $red: 255)")
+    flunk("Expected exception")
+  rescue Sass::SyntaxError => e
+    assert_equal("Function rgb was passed argument $red both by position and by name", e.message)
+  end
+
+  def test_keyword_args_with_keyword_before_positional_argument
+    evaluate("rgb($red: 255, 255, 255)")
+    flunk("Expected exception")
+  rescue Sass::SyntaxError => e
+    assert_equal("Positional arguments must come before keyword arguments.", e.message)
   end
 
   def test_only_var_args
@@ -1018,10 +1102,18 @@ MSG
     assert_equal "only-kw-args(a, b, c)", evaluate("only-kw-args($a: 1, $b: 2, $c: 3)")
   end
 
+  ## Regression Tests
+
+  def test_saturation_bounds
+    assert_equal "#fbfdff", evaluate("hsl(hue(#fbfdff), saturation(#fbfdff), lightness(#fbfdff))")
+  end
+
   private
 
   def evaluate(value)
-    Sass::Script::Parser.parse(value, 0, 0).perform(Sass::Environment.new).to_s
+    result = perform(value)
+    assert_kind_of Sass::Script::Literal, result
+    return result.to_s
   end
 
   def perform(value)

@@ -3,6 +3,580 @@
 * Table of contents
 {:toc}
 
+## 3.2.10 (Unreleased)
+
+* Use the Sass logger infrastructure for `@debug` directives.
+
+* When printing a Sass error into a CSS comment, escape `*/` so the comment
+  doesn't end prematurely.
+
+* Preserve the `!` in `/*! ... */`-style comments.
+
+* Fix a bug where selectors were being incorrectly trimmed when using `@extend`.
+
+## 3.2.9
+
+* Fix a bug where `@extend`s would occasionally cause a selector to be generated
+  with the incorrect specificity.
+
+* Avoid loading [listen](http://github.com/guard/listen) v1.0, even if it's
+  installed as a Gem (see [issue 719](https://github.com/nex3/sass/issues/719)).
+
+* Update the bundled version of [listen](http://github.com/guard/listen) to
+  0.7.3.
+
+* Automatically avoid the [IE7 `content: counter` bug][cc bug].
+
+[cc bug]: http://jes.st/2013/ie7s-css-breaking-content-counter-bug/
+
+## 3.2.8
+
+* Fix some edge cases where redundant selectors were emitted when using
+  `@extend`.
+
+* Fix a bug where comma-separated lists with interpolation could lose elements.
+
+* Fix a bug in `sass-convert` where lists being passed as arguments to functions
+  or mixins would lose their surrounding parentheses.
+
+* Fix a bug in `sass-convert` where `null` wasn't being converted correctly.
+
+* Fix a bug where multiple spaces in a string literal would sometimes be folded
+  together.
+
+* `sass` and `sass-convert` won't create an empty file before writing to it.
+  This fixes a flash of unstyled content when using LiveReload and similar
+  tools.
+
+* Fix a case where a corrupted cache could produce fatal errors on some versions
+  of Ruby.
+
+* Fix a case where a mixin loop error would be incorrectly reported when using
+  `@content`.
+
+## 3.2.7
+
+* The \{Sass::Script::Functions#index `index`} and \{Sass::Script::Functions#zip
+  `zip`} functions now work like all other list functions and treat individual
+  values as single-element lists.
+
+* Avoid stack overflow errors caused by very long function or mixin argument
+  lists.
+
+* Emit relative paths when using the `--line-comments` flag of the `sass`
+  executable.
+
+* Fix a case where very long numbers would cause the SCSS parser to
+  take exponential time.
+
+## 3.2.6
+
+* Support for Rubinius 2.0.0.rc1. All tests pass in 1.8 mode. 1.9 mode has some
+  tests blocked on [Rubinius issue
+  2139](https://github.com/rubinius/rubinius/issues/2139).
+
+* Support for JRuby 1.7.2.
+
+* Support for symlinked executables. Thanks to [Yin-So
+  Chen](http://yinsochen.com/).
+
+* Support for bubbling `@supports` queries in the indented syntax.
+
+* Fix an incorrect warning when using `@extend` from within nested `@media`
+  queries.
+
+* Update the bundled version of [listen](http://github.com/guard/listen) to
+  0.7.2.
+
+## 3.2.5
+
+* Fix a bug where bogus `@extend` warnings were being generated.
+
+* Fix an `@import` bug on Windows. Thanks to [Darryl
+  Miles](https://github.com/dlmiles).
+
+* Ruby 2.0.0-preview compatibility. Thanks to [Eric
+  Saxby](http://www.livinginthepast.org/).
+
+* Fix incorrect line numbering when using DOS line endings with the indented
+  syntax.
+
+## 3.2.4
+
+* Fix imports from `.jar` files in JRuby. Thanks to [Alex
+  Hvostov](https://github.com/argv-minus-one).
+
+* Allow comments within `@import` statements in SCSS.
+
+* Fix a parsing performance bug where long decimals would occasionally take many
+  minutes to parse.
+
+## 3.2.3
+
+* `sass --watch` no longer crashs when a file in a watched directory is deleted.
+
+* Allow `@extend` within bubbling nodes such as `@media`.
+
+* Fix various JRuby incompatibilities and test failures.
+
+* Work around a performance bug that arises from using `@extend` with
+  deeply-nested selectors.
+
+## 3.2.2
+
+* Add a `--poll` option to force `sass --watch` to use the polling backend to
+  [Listen](https://github.com/guard/listen).
+
+* Fix some error reporting bugs related to `@import`.
+
+* Treat [protocol-relative URLs][pru] in `@import`s as static URLs, just like
+  `http` and `https` URLs.
+
+* Improve the error message for misplaced simple selectors.
+
+* Fix an option-handling bug that was causing errors with the Compass URL
+  helpers.
+
+* Fix a performance issue with `@import` that only appears when
+  ActiveSupport is loaded.
+
+* Fix flushing of actions to stdout. Thanks to [Russell Davis]
+  (http://github.com/russelldavis).
+
+* Fix the documentation for the `max()` function.
+
+* Fix a `@media` parsing bug.
+
+[pru]: http://paulirish.com/2010/the-protocol-relative-url/
+
+### Deprecations -- Must Read!
+
+* Sass will now print a warning when it encounters a single `@import` statement
+  that tries to import more than one file. For example, if you have `@import
+  "screen"` and both `screen.scss` and `_screen.scss` exist, a warning will be
+  printed. This will become an error in future versions of Sass.
+
+## 3.2.1 (15 August 2012)
+
+* Fix a buggy interaction with Pow and Capybara that caused `EOFError`s.
+
+## 3.2.0 (10 August 2012)
+
+### `@content`
+
+A mixin include can now accept a block of content ({file:SASS_REFERENCE.md#mixin-content Reference Documentation}).
+The style block will be passed to the mixin and can be placed at the point @content is used. E.g.:
+
+    @mixin iphone {
+      @media only screen and (max-width: 480px) {
+        @content;
+      }
+    }
+
+    @include iphone {
+      body { color: red }
+    }
+
+Or in `.sass` syntax:
+
+    =iphone
+      @media only screen and (max-width: 480px)
+        @content
+
+    +iphone
+      body
+        color: red
+
+Produces:
+
+    @media only screen and (max-width: 480px) {
+      body { color: red }
+    }
+
+Note that the contents passed to the mixin are evaluated in the scope they are used,
+not the scope of the mixin. {file:SASS_REFERENCE.md#variable_scope_and_content_blocks More on variable scoping.}
+
+### Placeholder Selectors: `%foo`
+
+Sass supports a new, special type of selector called a "placeholder selector".
+These look like class and id selectors, except the `#` or `.` is replaced by `%`.
+They're meant to be used with the {file:SASS_REFERENCE.md#extend `@extend` directive},
+when you want to write styles to be extended
+but you don't want the base styles to appear in the CSS.
+
+On its own, a placeholder selector just causes a ruleset not to be rendered.
+For example:
+
+    // This ruleset won't be rendered on its own.
+    #context a%extreme {
+      color: blue;
+      font-weight: bold;
+      font-size: 2em;
+    }
+
+However, placeholder selectors can be extended, just like classes and ids.
+The extended selectors will be generated, but the base placeholder selector will not.
+For example:
+
+    .notice { @extend %extreme; }
+
+Is compiled to:
+
+    #context a.notice {
+      color: blue;
+      font-weight: bold;
+      font-size: 2em;
+    }
+
+### Variable Arguments
+
+Mixins and functions now both support variable arguments. When defining a mixin
+or function, you can add `...` after the final argument to have it accept an
+unbounded number of arguments and package them into a list. When calling a mixin
+or function, you can add `...` to expand the final argument (if it's a list) so
+that each value is passed as a separate argument. For example:
+
+    @mixin box-shadow($shadows...) {
+      // $shadows is a list of all arguments passed to box-shadow
+      -moz-box-shadow: $shadows;
+      -webkit-box-shadow: $shadows;
+      box-shadow: $shadows;      
+    }
+
+    // This is the same as "@include spacing(1, 2, 3);"
+    $values: 1, 2, 3;
+    @include spacing($values...);
+
+Finally, if a variable argument list is passed directly on to another mixin or
+function, it will also pass along any keyword arguments. This means that you can
+wrap a pre-existing mixin or function and add new functionality without changing
+the call signature.
+
+### Directive Interpolation
+
+`#{}` interpolation is now allowed in all plain CSS directives
+(such as `@font-face`, `@keyframes`, and of course `@media`).
+
+In addition, `@media` gets some special treatment.
+In addition to allowing `#{}` interpolation,
+expressions may be used directly in media feature queries.
+This means that you can write e.g.:
+
+    $media: screen;
+    $feature: -webkit-min-device-pixel-ratio;
+    $value: 1.5;
+
+    @media #{$media} and ($feature: $value) {
+      ...
+    }
+
+This is intended to allow authors to easily write mixins
+that make use of `@media` and other directives dynamically.
+
+### Smaller Improvements
+
+* Mixins and functions may now be defined in a nested context, for example
+  within `@media` rules. This also allows files containing them to be imported
+  in such contexts.
+
+* Previously, only the `:-moz-any` selector was supported; this has been
+  expanded to support any vendor prefix, as well as the plain `:any` selector.
+
+* All proposed [CSS4 selectors](http://dev.w3.org/csswg/selectors4/) are now
+  supported, including reference selectors (e.g. `.foo /attr/ .bar`) and subject
+  selectors (e.g. `.foo!`).
+
+* Sass now supports a global list of load paths, accessible via
+  {Sass.load_paths}. This allows plugins and libraries to easily register their
+  Sass files such that they're accessible to all {Sass::Engine} instances.
+
+* `Sass.load_paths` is initialized to the value of the `SASS_PATH` environment
+  variable. This variable should contain a colon-separated list of load paths
+  (semicolon-separated on Windows).
+
+* In certain cases, redundant selectors used to be created as a result of a
+  single rule having multiple `@extend`s. That redundancy has been eliminated.
+
+* Redundant selectors were also sometimes created by nested selectors
+  using `@extend`. That redundancy has been eliminated as well.
+
+* There is now much more comprehensive support for using `@extend` alongside
+  CSS3 selector combinators (`+`, `~`, and `>`). These combinators will now be
+  merged as much as possible.
+
+* The full set of [extended color keywords](http://www.w3.org/TR/css3-color/#svg-color)
+  are now supported by Sass. They may be used to refer to color objects, and
+  colors will render using those color names when appropriate.
+
+* Sass 3.2 adds the \{Sass::Script::Functions#ie_hex_str `ie-hex-str`} function
+  which returns a hex string for a color suitable for use with IE filters.
+
+* Sass 3.2 adds the \{Sass::Script::Functions#min `min`} and
+  \{Sass::Script::Functions#max `max`} functions, which return the minimum and
+  maximum of several values.
+
+* Sass functions are now more strict about how keyword arguments can be passed.
+
+* Decimal numbers now default to five digits of precision after the decimal
+  point.
+
+* The \{Sass::Script::Functions::EvaluationContext.options options hash}
+  available to Sass functions now contains the filename of the file that the
+  function was executed in, rather than the top-level file.
+
+### Backwards Incompatibilities -- Must Read!
+
+#### `@extend` Warnings
+
+Any `@extend` that doesn't match any selectors in the document will now print a
+warning. These warnings will become errors in future versions of Sass. This will
+help protect against typos and make it clearer why broken styles aren't working.
+For example:
+
+    h1.notice {color: red}
+    a.important {@extend .notice}
+
+This will print a warning, since the only use of `.notice` can't be merged with
+`a`.
+
+You can declare that you don't want warnings for a specific `@extend` by using
+the `!optional` flag. For example:
+
+    h1.notice {color: red}
+    a.important {@extend .notice !optional}
+
+This will not print a warning.
+
+#### Smaller Incompatibilities
+
+* Parent selectors followed immediately by identifiers (e.g. `&foo`)
+  are fully disallowed.
+  They were deprecated in 3.1.8.
+
+* `#{}` interpolation is now allowed in all comments.
+
+* The `!` flag may not be used with `//` comments (e.g. `//!`).
+
+* `#{}` interpolation is now disallowed in all `@import` statements
+  except for those using `url()`.
+
+* `sass-convert` no longer supports converting files from LessCSS.
+
+## 3.1.21 (10 August 2012)
+
+* Preserve single-line comments that are embedded within multi-line comments.
+* Preserve newlines in nested selectors when those selectors are used multiple
+  times in the same document.
+* Allow tests to be run without the `LANG` environment variable set.
+* Update the bundled version of [Listen](https://github.com/guard/listen) to
+  0.4.7.
+* Sass will now convert `px` to other absolute units using the
+  conversion ratio of `96px == 1in` as dictated by the
+  [CSS Spec](http://www.w3.org/TR/CSS21/syndata.html#length-units)
+
+## 3.1.20
+
+* Don't crash if a UTF encoding isn't found. Thanks to [Andrew
+  Garbutt](http://github.com/techsplicer).
+* Properly watch files recursively with `sass --watch`. Thanks to [Sébastien
+  Tisserant](https://github.com/sebweaver).
+* Fix the documentation for the \{Sass::Script::Functions#append append()}
+  function.
+* Support the `saturate()`, `opacity()`, and `invert()` functions when used as
+  in the [Filter Effects][filter] spec.
+* Support MacRuby. Thanks to [Will Glynn](http://github.com/delta407).
+
+[filter]: https://dvcs.w3.org/hg/FXTF/raw-file/tip/filters/index.html
+
+## 3.1.19
+
+* Fix an `uninitialized constant Sass::Exec::Sass::Util` error when using the
+  command-line tool.
+* Allow `@extend` within directives such as `@media` as long as it only extends
+  selectors that are within the same directive.
+
+## 3.1.18
+
+* Ruby 2.0 compatibility. Thanks to [Jeremy
+  Kemper](https://github.com/jeremy).
+
+### Deprecations -- Must Read!
+
+* Deprecate the use of `@extend` within directives such as `@media`. This has
+  never worked correctly, and now it's officially deprecated. It will be an
+  error in 3.2.
+
+## 3.1.17
+
+* Don't crash when calling `#inspect` on an internal Sass tree object in Ruby
+  1.9.
+* Fix some bugs in `sass --watch` introduced in 3.1.16. Thanks to [Maher
+  Sallam](https://github.com/Maher4Ever).
+* Support bare interpolation in the value portion of attribute
+  selectors (e.g. `[name=#{$value}]`).
+* Support keyword arguments for the `invert()` function.
+* Handle backslash-separated paths better on Windows.
+* Fix `rake install` on Ruby 1.9.
+* Properly convert nested `@if` statements with `sass-convert`.
+
+## 3.1.16
+
+* Fix some bugs in `sass-convert` selector parsing when converting from CSS.
+* Substantially improve compilation performance on Ruby 1.8.
+* Support the `@-moz-document` directive's non-standard `url-prefix` and
+  `domain` function syntax.
+* Support the [`@supports` directive](http://www.w3.org/TR/css3-conditional/#at-supports).
+* Fix a performance issue when using `/*! */` comments with the Rails asset
+  pipeline.
+* Support `-moz-element`.
+* Properly handle empty lists in `sass-convert`.
+* Move from [FSSM](https://github.com/ttilley/fssm) to
+  [Listen](https://github.com/guard/listen) for file-system monitoring.
+
+## 3.1.15
+
+* Support extending multiple comma-separated selectors (e.g. `@extend .foo, .bar`).
+  This is just a terser way to write multiple `@extend`s
+  (e.g. `@extend .foo; @extend .bar`).
+  This wasn't previously intended to work, but it did in the indented syntax only.
+* Avoid more stack overflows when there are import loops in files.
+* Update the bundled [FSSM](https://github.com/ttilley/fssm) to version 0.2.8.1.
+* Make the `grayscale` function work with `-webkit-filter`.
+* Provide a better error message for selectors beginning with `/`
+  in the indented syntax.
+* Flush standard output after printing notifications in `sass --watch`.
+* Fix variable definitions in the REPL.
+
+## 3.1.14
+
+* Fix a typo that was causing crashes on Ruby 1.9.
+
+## 3.1.13
+
+* Fix a smattering of subtle bugs that would crop up when using multibyte
+  character sets.
+* Fix a bug when using `@extend` with selectors containing newlines.
+* Make boolean operators short-circuit.
+* Remove unnecessary whitespace in selectors in `:compressed` mode.
+* Don't output debug info within non-`@media` directives.
+* Make sure `:after` and `:before` selectors end up on the end of
+  selectors resulting from `@extend`.
+* Fix a bug when using imports containing invalid path characters on Windows.
+* Bubble CSS `@import` statements to the top of stylesheets.
+
+## 3.1.12
+
+* Compatibility with the `mathn` library
+  (thanks to [Thomas Walpole](https://github.com/twalpole)).
+* Fix some infinite loops with mixins that were previously uncaught.
+* Catch infinite `@import` loops.
+* Fix a deprecation warning in `sass --update` and `--watch`
+  (thanks to [Marcel Köppen](https://github.com/Marzelpan)).
+* Don't make `$important` a special pre-initialized variable.
+* Fix exponential parsing time of certain complex property values and selectors.
+* Properly merge `@media` directives with comma-separated queries.
+  E.g. `@media foo, bar { @media baz { ... } }` now becomes
+  `@media foo and baz, bar and baz { ... }`.
+
+## 3.1.11
+
+* Allow control directives (such as `@if`) to be nested beneath properties.
+* Allow property names to begin with a hyphen followed by interpolation (e.g. `-#{...}`).
+* Fix a parsing error with interpolation in comma-separated lists.
+* Make `--cache-store` with with `--update`.
+* Properly report `ArgumentError`s that occur within user-defined functions.
+* Don't crash on JRuby if the underlying Java doesn't support every Unicode encoding.
+* Add new `updated_stylesheet` callback, which is run after each stylesheet has
+  been successfully compiled. Thanks to [Christian Peters](https://github.com/ChristianPeters).
+* Allow absolute paths to be used in an importer with a different root.
+* Don't destructively modify the options when running `Sass::Plugin.force_update`.
+* Prevent Regexp buffer overflows when parsing long strings
+  (thanks to [Agworld](https://github.com/Agworld).
+
+### Deprecations -- Must Read!
+
+* The `updating_stylesheet` is deprecated and will be removed in a
+  future release. Use the new `updated_stylesheet` callback instead.
+
+## 3.1.10
+
+* Fix another aspect of the 3.1.8 regression relating to `+`.
+
+## 3.1.9
+
+* Fix a regression in 3.1.8 that broke the `+` combinator in selectors.
+
+* Deprecate the loud-comment flag when used with silent comments (e.g. `//!`).
+  Using it with multi-line comments (e.g. `/*!`) still works.
+
+## 3.1.8
+
+* Deprecate parent selectors followed immediately by identifiers (e.g. `&foo`).
+  This should never have worked, since it violates the rule
+  of `&` only being usable where an element selector would.
+
+* Add a `--force` option to the `sass` executable which makes `--update`
+  always compile all stylesheets, even if the CSS is newer.
+
+* Disallow semicolons at the end of `@import` directives in the indented syntax.
+
+* Don't error out when being used as a library without requiring `fileutil`.
+
+* Don't crash when Compass-style sprite imports are used with `StalenessChecker`
+  (thanks to [Matthias Bauer](https://github.com/moeffju)).
+
+* The numeric precision of numbers in Sass can now be set using the
+  `--precision` option to the command line. Additionally, the default
+  number of digits of precision in Sass output can now be
+  changed by setting `Sass::Script::Number.precision` to an integer
+  (defaults to 3). Since this value can now be changed, the `PRECISION`
+  constant in `Sass::Script::Number` has been deprecated. In the unlikely
+  event that you were using it in your code, you should now use
+   `Sass::Script::Number.precision_factor` instead.
+
+* Don't crash when running `sass-convert` with selectors with two commas in a row.
+
+* Explicitly require Ruby >= 1.8.7 (thanks [Eric Mason](https://github.com/ericmason)).
+
+* Properly validate the nesting of elements in imported stylesheets.
+
+* Properly compile files in parent directories with `--watch` and `--update`.
+
+* Properly null out options in mixin definitions before caching them. This fixes
+  a caching bug that has been plaguing some Rails 3.1 users.
+
+## 3.1.7
+
+* Don't crash when doing certain operations with `@function`s.
+
+## 3.1.6
+
+* The option `:trace_selectors` can now be used to emit a full trace
+  before each selector. This can be helpful for in-browser debugging of
+  stylesheet imports and mixin includes. This option supersedes the
+  `:line_comments` option and is superseded by the `:debug_info`
+  option.
+
+* Fix a bug where long `@if`/`@else` chains would cause exponential slowdown
+  under some circumstances.
+
+## 3.1.5
+
+* Updated the vendored FSSM version, which will avoid segfaults on OS
+  X Lion when using `--watch`.
+
+## 3.1.4
+
+* Sass no longer unnecessarily caches the sass options hash.
+  This allows objects that cannot be marshaled to be placed into the
+  options hash.
+
+## 3.1.3
+
+* Sass now logs message thru a logger object which can be changed to
+  provide integration with other frameworks' logging infrastructure.
+
+
 ## 3.1.2
 
 * Fix some issues that were breaking Sass when running within Rubinius.
@@ -151,7 +725,7 @@ or by commas (e.g. `Helvetica, Arial, sans-serif`).
 In addition, individual values count as single-item lists.
 
 Lists won't behave any differently in Sass 3.1 than they did in 3.0.
-However, you can now do more with them using the new {file:Sass/Script/Functions.html#list-functions list functions}:
+However, you can now do more with them using the new [list functions](Sass/Script/Functions.html#list-functions):
 
 * The {Sass::Script::Functions#nth `nth($list, $n)` function} returns the nth item in a list.
   For example, `nth(1px 2px 10px, 2)` returns the second item, `2px`.
@@ -298,7 +872,7 @@ and distributing those stylesheets across multiple files.
 
 ## 3.0.25
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.25).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.25).
 
 * When displaying a Sass error in an imported stylesheet,
   use the imported stylesheet's contents rather than the top-level stylesheet.
@@ -312,7 +886,7 @@ and distributing those stylesheets across multiple files.
 
 ## 3.0.24
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.24).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.24).
 
 * Raise an error when `@else` appears without an `@if` in SCSS.
 
@@ -321,7 +895,7 @@ and distributing those stylesheets across multiple files.
 
 ## 3.0.23
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.23).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.23).
 
 * Fix the error message for unloadable modules when running the executables under Ruby 1.9.2.
 
@@ -362,7 +936,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.22
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.22).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.22).
 
 * Remove `vendor/sass`, which snuck into the gem by mistake
   and was causing trouble for Heroku users (thanks to [Jacques Crocker](http://railsjedi.com/)).
@@ -372,7 +946,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.21
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.21).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.21).
 
 * Fix the permissions errors for good.
 
@@ -380,7 +954,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.20
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.20).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.20).
 
 * Fix some permissions errors.
 
@@ -388,7 +962,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.19
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.19).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.19).
 
 * Make the alpha value for `rgba` colors respect {Sass::Script::Number::PRECISION}.
 
@@ -404,7 +978,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.18
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.18).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.18).
 
 * Don't require `rake` in the gemspec, for bundler compatibility under
   JRuby. Thanks to [Gordon McCreight](http://www.gmccreight.com/blog).
@@ -423,7 +997,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.17
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.17).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.17).
 
 * Disallow `#{}` interpolation in `@media` queries or unrecognized directives.
   This was never allowed, but now it explicitly throws an error
@@ -438,7 +1012,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.16
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.16).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.16).
 
 * Fix a bug where certain sorts of comments would get improperly
   rendered in the `:compact` style.
@@ -453,7 +1027,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.15
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.15).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.15).
 
 * Fix a bug where `sass --watch` and `sass --update` were completely broken.
 
@@ -461,7 +1035,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.14
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.14).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.14).
 
 * Properly parse paths with drive letters on Windows (e.g. `C:\Foo\Bar.sass`)
   in the Sass executable.
@@ -473,7 +1047,7 @@ This means that under Ruby 1.8 it's *not* safe to import files with different en
 
 ## 3.0.13
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.13).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.13).
 
 ## CSS `@import` Directives
 
@@ -520,7 +1094,7 @@ Upgrade to Rails 3.0.0.beta4 if you haven't already.
 
 ## 3.0.12
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.12).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.12).
 
 ## Rails 3 Support
 
@@ -535,7 +1109,7 @@ Haml 3.0.13 will only support 3.0.0.beta.4.
 
 ## 3.0.11
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.11).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.11).
 
 There were no changes made to Haml between versions 3.0.10 and 3.0.11.
 
@@ -552,7 +1126,7 @@ wasn't reloaded at the proper time.
 
 ## 3.0.10
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.10).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.10).
 
 ### Appengine-JRuby Support
 
@@ -572,20 +1146,20 @@ even when no controllers are being accessed.
 
 ## 3.0.9
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.9).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.9).
 
 There were no changes made to Sass between versions 3.0.8 and 3.0.9.
 A bug in Gemcutter caused the gem to be uploaded improperly.
 
 ## 3.0.8
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.8).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.8).
 
 * Fix a bug with Rails versions prior to Rails 3.
 
 ## 3.0.7
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.7).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.7).
 
 ### Encoding Support
 
@@ -607,13 +1181,13 @@ for specifying the encoding of Sass/SCSS/CSS files.
 
 ## 3.0.6
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.6).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.6).
 
 There were no changes made to Sass between versions 3.0.5 and 3.0.6.
 
 ## 3.0.5
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.5).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.5).
 
 ### `#{}` Interpolation in Properties
 
@@ -672,7 +1246,7 @@ Make the `--no-cache` flag properly forbid Sass from writing `.sass-cache` files
 
 ## 3.0.4
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.4).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.4).
 
 * Raise an informative error when function arguments have a mispaced comma,
   as in `foo(bar, )`.
@@ -682,7 +1256,7 @@ Make the `--no-cache` flag properly forbid Sass from writing `.sass-cache` files
 
 ## 3.0.3
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.3).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.3).
 
 ### Rails 3 Support
 
@@ -709,7 +1283,7 @@ should *really* work with this release.
 
 ## 3.0.2
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.2).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.2).
 
 ### Merb 1.1.0 Support
 
@@ -723,7 +1297,7 @@ Fixed a bug inserting the Sass plugin into the Merb 1.1.0 Rack application.
 
 ## 3.0.1
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.1).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.1).
 
 ### Installation in Rails
 
@@ -761,7 +1335,7 @@ Thus, three new methods have been added for handling it:
 ## 3.0.0
 {#3-0-0}
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/3.0.0).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/3.0.0).
 
 ### Deprecations -- Must Read!
 {#3-0-0-deprecations}
@@ -1480,7 +2054,7 @@ This is also available via the `--debug-info` command-line flag.
 
 ## 2.2.24
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.24).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.24).
 
 * Parent references -- the `&` character --
   may only be placed at the beginning of simple selector sequences in Sass 3.
@@ -1489,7 +2063,7 @@ This is also available via the `--debug-info` command-line flag.
 
 ## 2.2.23
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.23).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.23).
 
 * Don't crash when `rake gems` is run in Rails with Sass installed.
   Thanks to [Florian Frank](http://github.com/flori).
@@ -1506,7 +2080,7 @@ This is also available via the `--debug-info` command-line flag.
 
 ## 2.2.22
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.22).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.22).
 
 * Add a railtie so Haml and Sass will be automatically loaded in Rails 3.
   Thanks to [Daniel Neighman](http://pancakestacks.wordpress.com/).
@@ -1515,7 +2089,7 @@ This is also available via the `--debug-info` command-line flag.
 
 ## 2.2.21
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.21).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.21).
 
 * Fix a few bugs in the git-revision-reporting in {Sass::Version#version}.
   In particular, it will still work if `git gc` has been called recently,
@@ -1527,7 +2101,7 @@ This is also available via the `--debug-info` command-line flag.
 
 ## 2.2.20
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.20).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.20).
 
 * If the cache file for a given Sass file is corrupt
   because it doesn't have enough content,
@@ -1540,13 +2114,13 @@ This is also available via the `--debug-info` command-line flag.
 
 ## 2.2.19
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.18).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.18).
 
 There were no changes made to Sass between versions 2.2.18 and 2.2.19.
 
 ## 2.2.18
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.18).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.18).
 
 * Use `Rails.env` rather than `RAILS_ENV` when running under Rails 3.0.
   Thanks to [Duncan Grazier](http://duncangrazier.com/).
@@ -1570,7 +2144,7 @@ There were no changes made to Sass between versions 2.2.18 and 2.2.19.
 
 ## 2.2.17
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.16).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.16).
 
 * When the {file:SASS_REFERENCE.md#full_exception-option `:full_exception` option}
   is false, raise the error in Ruby code rather than swallowing it
@@ -1600,7 +2174,7 @@ There were no changes made to Sass between versions 2.2.18 and 2.2.19.
 
 ## 2.2.16
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.16).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.16).
 
 * Fixed a bug where modules containing user-defined Sass functions
   weren't made available when simply included in {Sass::Script::Functions}
@@ -1610,7 +2184,7 @@ There were no changes made to Sass between versions 2.2.18 and 2.2.19.
 
 ## 2.2.15
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.15).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.15).
 
 * Added {Sass::Script::Color#with} for a way of setting color channels
   that's easier than manually constructing a new color
@@ -1622,7 +2196,7 @@ There were no changes made to Sass between versions 2.2.18 and 2.2.19.
 
 ## 2.2.14
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.14).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.14).
 
 * All Sass functions now raise explicit errors if their inputs
   are of the incorrect type.
@@ -1659,19 +2233,19 @@ See the {Sass::Plugin::Rack} documentation for more details.
 
 ## 2.2.13
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.13).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.13).
 
 There were no changes made to Sass between versions 2.2.12 and 2.2.13.
 
 ## 2.2.12
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.12).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.12).
 
 * Fix a stupid bug introduced in 2.2.11 that broke the Sass Rails plugin.
 
 ## 2.2.11
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.11).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.11).
 
 * Added a note to errors on properties that could be pseudo-classes (e.g. `:focus`)
   indicating that they should be backslash-escaped.
@@ -1694,7 +2268,7 @@ There were no changes made to Sass between versions 2.2.12 and 2.2.13.
 
 ## 2.2.10
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.10).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.10).
 
 * Add support for attribute selectors with spaces around the `=`.
   For example:
@@ -1704,25 +2278,25 @@ There were no changes made to Sass between versions 2.2.12 and 2.2.13.
 
 ## 2.2.9
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.9).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.9).
 
 There were no changes made to Sass between versions 2.2.8 and 2.2.9.
 
 ## 2.2.8
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.8).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.8).
 
 There were no changes made to Sass between versions 2.2.7 and 2.2.8.
 
 ## 2.2.7
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.7).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.7).
 
 There were no changes made to Sass between versions 2.2.6 and 2.2.7.
 
 ## 2.2.6
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.6).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.6).
 
 * Don't crash when the `__FILE__` constant of a Ruby file is a relative path,
   as apparently happens sometimes in TextMate
@@ -1732,13 +2306,13 @@ There were no changes made to Sass between versions 2.2.6 and 2.2.7.
 
 ## 2.2.5
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.5).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.5).
 
 There were no changes made to Sass between versions 2.2.4 and 2.2.5.
 
 ## 2.2.4
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.4).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.4).
 
 * Don't add `require 'rubygems'` to the top of init.rb when installed
   via `sass --rails`. This isn't necessary, and actually gets
@@ -1749,14 +2323,14 @@ There were no changes made to Sass between versions 2.2.4 and 2.2.5.
 
 ## 2.2.3
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.3).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.3).
 
 Sass 2.2.3 prints line numbers for warnings about selectors
 with no properties.
 
 ## 2.2.2
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.2).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.2).
 
 Sass 2.2.2 is a minor bug-fix release.
 Notable changes include better parsing of mixin definitions and inclusions
@@ -1764,7 +2338,7 @@ and better support for Ruby 1.9.
 
 ## 2.2.1
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.1).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.1).
 
 Sass 2.2.1 is a minor bug-fix release.
 
@@ -1777,7 +2351,7 @@ Sass 2.2.1 is a minor bug-fix release.
 
 ## 2.2.0
 
-[Tagged on GitHub](http://github.com/nex3/haml/commit/2.2.0).
+[Tagged on GitHub](http://github.com/nex3/sass/commit/2.2.0).
 
 The 2.2 release marks a significant step in the evolution of the Sass
 language. The focus has been to increase the power of Sass to keep

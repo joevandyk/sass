@@ -17,7 +17,7 @@ module Sass::Script
 
     # A list of units in the numerator of the number.
     # For example, `1px*em/in*cm` would return `["px", "em"]`
-    # @return [Array<String>]
+    # @return [Array<String>] 
     attr_reader :numerator_units
 
     # A list of units in the denominator of the number.
@@ -35,11 +35,34 @@ module Sass::Script
     # @return [Boolean, nil]
     attr_accessor :original
 
-    # The precision with which numbers will be printed to CSS files.
-    # For example, if this is `1000.0`,
+    def self.precision
+      @precision ||= 5
+    end
+
+    # Sets the number of digits of precision
+    # For example, if this is `3`,
     # `3.1415926` will be printed as `3.142`.
-    # @api public
-    PRECISION = 1000.0
+    def self.precision=(digits)
+      @precision = digits.round
+      @precision_factor = 10.0**@precision
+    end
+
+    # the precision factor used in numeric output
+    # it is derived from the `precision` method.
+    def self.precision_factor
+      @precision_factor ||= 10.0**precision
+    end
+
+    # Handles the deprecation warning for the PRECISION constant
+    # This can be removed in 3.2.
+    def self.const_missing(const)
+      if const == :PRECISION
+        Sass::Util.sass_warn("Sass::Script::Number::PRECISION is deprecated and will be removed in a future release. Use Sass::Script::Number.precision_factor instead.")
+        const_set(:PRECISION, self.precision_factor)
+      else
+        super
+      end
+    end
 
     # Used so we don't allocate two new arrays for each new number.
     NO_UNITS  = []
@@ -337,7 +360,7 @@ module Sass::Script
       elsif num % 1 == 0.0
         num.to_i
       else
-        (num * PRECISION).round / PRECISION
+        ((num * self.precision_factor).round / self.precision_factor).to_f
       end
     end
 
@@ -380,7 +403,7 @@ module Sass::Script
         [this.numerator_units + other.numerator_units, this.denominator_units + other.denominator_units]
       when :/
         [this.numerator_units + other.denominator_units, this.denominator_units + other.numerator_units]
-      else
+      else  
         [this.numerator_units, this.denominator_units]
       end
     end
@@ -399,12 +422,13 @@ module Sass::Script
     end
 
     # A hash of unit names to their index in the conversion table
-    CONVERTABLE_UNITS = {"in" => 0,        "cm" => 1,    "pc" => 2,    "mm" => 3,   "pt" => 4}
-    CONVERSION_TABLE = [[ 1,                2.54,         6,            25.4,        72        ], # in
-                        [ nil,              1,            2.36220473,   10,          28.3464567], # cm
-                        [ nil,              nil,          1,            4.23333333,  12        ], # pc
-                        [ nil,              nil,          nil,          1,           2.83464567], # mm
-                        [ nil,              nil,          nil,          nil,         1         ]] # pt
+    CONVERTABLE_UNITS = {"in" => 0,        "cm" => 1,    "pc" => 2,    "mm" => 3,   "pt" => 4,  "px" => 5    }
+    CONVERSION_TABLE = [[ 1,                2.54,         6,            25.4,        72        , 96          ], # in
+                        [ nil,              1,            2.36220473,   10,          28.3464567, 37.795275591], # cm
+                        [ nil,              nil,          1,            4.23333333,  12        , 16          ], # pc
+                        [ nil,              nil,          nil,          1,           2.83464567, 3.7795275591], # mm
+                        [ nil,              nil,          nil,          nil,         1         , 1.3333333333], # pt
+                        [ nil,              nil,          nil,          nil,         nil       , 1           ]] # px
 
     def conversion_factor(from_unit, to_unit)
       res = CONVERSION_TABLE[CONVERTABLE_UNITS[from_unit]][CONVERTABLE_UNITS[to_unit]]

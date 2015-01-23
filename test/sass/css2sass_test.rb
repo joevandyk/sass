@@ -62,7 +62,7 @@ div .debug
 SASS
 div .warning {
   color: #d21a19; }
-span .debug {
+span .debug { 
   cursor: crosshair;}
 div .debug {
   cursor: default; }
@@ -237,6 +237,32 @@ SASS
 CSS
   end
 
+  def test_subject
+    assert_equal(<<SASS, css2sass(<<CSS))
+.foo
+  .bar!
+    .baz
+      a: b
+    .bip
+      c: d
+  .bar .bonk
+    e: f
+
+.flip!
+  &.bar
+    a: b
+  &.baz
+    c: d
+SASS
+.foo .bar! .baz {a: b;}
+.foo .bar! .bip {c: d;}
+.foo .bar .bonk {e: f;}
+
+.flip.bar! {a: b;}
+.flip.baz! {c: d;}
+CSS
+  end
+
   # Regressions
 
   def test_nesting_within_media
@@ -265,6 +291,55 @@ SASS
   baz {
     padding-left: 0;
     padding-right: 0; } }
+CSS
+  end
+
+  def test_double_comma
+    assert_equal(<<SASS, css2sass(<<CSS))
+foo, bar
+  a: b
+SASS
+foo, , bar { a: b }
+CSS
+  end
+
+  def test_selector_splitting
+    assert_equal(<<SASS, css2sass(<<CSS))
+.foo >
+  .bar
+    a: b
+  .baz
+    c: d
+SASS
+.foo>.bar {a: b}
+.foo>.baz {c: d}
+CSS
+
+    assert_equal(<<SASS, css2sass(<<CSS))
+.foo
+  &::bar
+    a: b
+  &::baz
+    c: d
+SASS
+.foo::bar {a: b}
+.foo::baz {c: d}
+CSS
+  end
+
+  def test_triple_nesting
+    assert_equal(<<SASS, css2sass(<<CSS))
+.foo .bar .baz
+  a: b
+SASS
+.foo .bar .baz {a: b}
+CSS
+
+    assert_equal(<<SASS, css2sass(<<CSS))
+.bar > .baz
+  c: d
+SASS
+.bar > .baz {c: d}
 CSS
   end
 

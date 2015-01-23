@@ -38,7 +38,7 @@ module Sass::Plugin
       self.options.merge!(options)
     end
 
-    # Register a callback to be run before stylesheets are mass-updated.
+    # Register a callback to be run after stylesheets are mass-updated.
     # This is run whenever \{#update\_stylesheets} is called,
     # unless the \{file:SASS_REFERENCE.md#never_update-option `:never_update` option}
     # is enabled.
@@ -50,6 +50,22 @@ module Sass::Plugin
     #   The first element of each pair is the source file,
     #   the second is the target CSS file.
     define_callback :updating_stylesheets
+
+    # Register a callback to be run after a single stylesheet is updated.
+    # The callback is only run if the stylesheet is really updated;
+    # if the CSS file is fresh, this won't be run.
+    #
+    # Even if the \{file:SASS_REFERENCE.md#full_exception-option `:full_exception` option}
+    # is enabled, this callback won't be run
+    # when an exception CSS file is being written.
+    # To run an action for those files, use \{#on\_compilation\_error}.
+    #
+    # @yield [template, css]
+    # @yieldparam template [String]
+    #   The location of the Sass/SCSS file being updated.
+    # @yieldparam css [String]
+    #   The location of the CSS file being generated.
+    define_callback :updated_stylesheet
 
     # Register a callback to be run before a single stylesheet is updated.
     # The callback is only run if the stylesheet is guaranteed to be updated;
@@ -66,6 +82,13 @@ module Sass::Plugin
     # @yieldparam css [String]
     #   The location of the CSS file being generated.
     define_callback :updating_stylesheet
+
+    def on_updating_stylesheet_with_deprecation_warning(&block)
+      Sass::Util.sass_warn("Sass::Compiler#on_updating_stylesheet callback is deprecated and will be removed in a future release. Use Sass::Compiler#on_updated_stylesheet instead, which is run after stylesheet compilation.")
+      on_updating_stylesheet_without_deprecation_warning(&block)
+    end
+    alias_method :on_updating_stylesheet_without_deprecation_warning, :on_updating_stylesheet
+    alias_method :on_updating_stylesheet, :on_updating_stylesheet_with_deprecation_warning
 
     # Register a callback to be run when Sass decides not to update a stylesheet.
     # In particular, the callback is run when Sass finds that
@@ -160,28 +183,26 @@ module Sass::Plugin
     #   The first string in each pair is the location of the Sass/SCSS file,
     #   the second is the location of the CSS file that it should be compiled to.
     def update_stylesheets(individual_files = [])
-      run_updating_stylesheets individual_files
+      individual_files = individual_files.dup
       Sass::Plugin.checked_for_updates = true
       staleness_checker = StalenessChecker.new(engine_options)
 
-      individual_files.each do |t, c|
-        if options[:always_update] || staleness_checker.stylesheet_needs_update?(c, t)
-          update_stylesheet(t, c)
-        end
-      end
-
       template_location_array.each do |template_location, css_location|
-
-        Dir.glob(File.join(template_location, "**", "[^_]*.s[ca]ss")).sort.each do |file|
+        Sass::Util.glob(File.join(template_location, "**", "[^_]*.s[ca]ss")).sort.each do |file|
           # Get the relative path to the file
           name = file.sub(template_location.to_s.sub(/\/*$/, '/'), "")
           css = css_filename(name, css_location)
+          individual_files << [file, css]
+        end
+      end
 
-          if options[:always_update] || staleness_checker.stylesheet_needs_update?(css, file)
-            update_stylesheet file, css
-          else
-            run_not_updating_stylesheet file, css
-          end
+      run_updating_stylesheets individual_files
+
+      individual_files.each do |file, css|
+        if options[:always_update] || staleness_checker.stylesheet_needs_update?(css, file)
+          update_stylesheet(file, css)
+        else
+          run_not_updating_stylesheet(file, css)
         end
       end
     end
@@ -198,10 +219,10 @@ module Sass::Plugin
     #
     # Before the watching starts in earnest, `watch` calls \{#update\_stylesheets}.
     #
-    # Note that `watch` uses the [FSSM](http://github.com/ttilley/fssm) library
+    # Note that `watch` uses the [Listen](http://github.com/guard/listen) library
     # to monitor the filesystem for changes.
-    # FSSM isn't loaded until `watch` is run.
-    # The version of FSSM distributed with Sass is loaded by default,
+    # Listen isn't loaded until `watch` is run.
+    # The version of Listen distributed with Sass is loaded by default,
     # but if another version has already been loaded that will be used instead.
     #
     # @param individual_files [Array<(String, String)>]
@@ -213,78 +234,63 @@ module Sass::Plugin
     def watch(individual_files = [])
       update_stylesheets(individual_files)
 
-      begin
-        require 'fssm'
-      rescue LoadError => e
-        dir = Sass::Util.scope("vendor/fssm/lib")
-        if $LOAD_PATH.include?(dir)
-          e.message << "\n" <<
-            if File.exists?(scope(".git"))
-              'Run "git submodule update --init" to get the recommended version.'
-            else
-              'Run "gem install fssm" to get it.'
-            end
-          raise e
-        else
-          $LOAD_PATH.unshift dir
-          retry
-        end
-      end
+      load_listen!
 
-      unless individual_files.empty? && FSSM::Backends::Default.name == "FSSM::Backends::FSEvents"
-        # As of FSSM 0.1.4, it doesn't support FSevents on individual files,
-        # but it also isn't smart enough to switch to polling itself.
-        require 'fssm/backends/polling'
-        Sass::Util.silence_warnings do
-          FSSM::Backends.const_set(:Default, FSSM::Backends::Polling)
-        end
+      template_paths = template_locations # cache the locations
+      individual_files_hash = individual_files.inject({}) do |h, files|
+        parent = File.dirname(files.first)
+        (h[parent] ||= []) << files unless template_paths.include?(parent)
+        h
       end
+      directories = template_paths + individual_files_hash.keys +
+        [{:relative_paths => true}]
 
       # TODO: Keep better track of what depends on what
       # so we don't have to run a global update every time anything changes.
-      FSSM.monitor do |mon|
-        template_location_array.each do |template_location, css_location|
-          mon.path template_location do |path|
-            path.glob '**/*.s[ac]ss'
-
-            path.update do |base, relative|
-              run_template_modified File.join(base, relative)
-              update_stylesheets(individual_files)
-            end
-
-            path.create do |base, relative|
-              run_template_created File.join(base, relative)
-              update_stylesheets(individual_files)
-            end
-
-            path.delete do |base, relative|
-              run_template_deleted File.join(base, relative)
-              css = File.join(css_location, relative.gsub(/\.s[ac]ss$/, '.css'))
-              try_delete_css css
-              update_stylesheets(individual_files)
-            end
+      listener = Listen::MultiListener.new(*directories) do |modified, added, removed|
+        modified.each do |f|
+          parent = File.dirname(f)
+          if files = individual_files_hash[parent]
+            next unless files.first == f
+          else
+            next unless f =~ /\.s[ac]ss$/
           end
+          run_template_modified(f)
         end
 
-        individual_files.each do |template, css|
-          mon.file template do |path|
-            path.update do
-              run_template_modified template
-              update_stylesheets(individual_files)
-            end
-
-            path.create do
-              run_template_created template
-              update_stylesheets(individual_files)
-            end
-
-            path.delete do
-              run_template_deleted template
-              try_delete_css css
-              update_stylesheets(individual_files)
-            end
+        added.each do |f|
+          parent = File.dirname(f)
+          if files = individual_files_hash[parent]
+            next unless files.first == f
+          else
+            next unless f =~ /\.s[ac]ss$/
           end
+          run_template_created(f)
         end
+
+        removed.each do |f|
+          parent = File.dirname(f)
+          if files = individual_files_hash[parent]
+            next unless files.first == f
+            try_delete_css files[1]
+          else
+            next unless f =~ /\.s[ac]ss$/
+            try_delete_css f.gsub(/\.s[ac]ss$/, '.css')
+          end
+          run_template_deleted(f)
+        end
+
+        update_stylesheets(individual_files)
+      end
+
+      # The native windows listener is much slower than the polling
+      # option, according to https://github.com/nex3/sass/commit/a3031856b22bc834a5417dedecb038b7be9b9e3e#commitcomment-1295118
+      listener.force_polling(true) if @options[:poll] || Sass::Util.windows?
+
+      begin
+        listener.start
+      rescue Exception => e
+        raise e unless e.is_a?(Interrupt)
       end
     end
 
@@ -306,6 +312,43 @@ module Sass::Plugin
 
     private
 
+    def load_listen!
+      if defined?(gem)
+        begin
+          gem 'listen', '~> 0.7'
+          require 'listen'
+        rescue Gem::LoadError
+          dir = Sass::Util.scope("vendor/listen/lib")
+          $LOAD_PATH.unshift dir
+          begin
+            require 'listen'
+          rescue LoadError => e
+            e.message << "\n" <<
+              if File.exists?(scope(".git"))
+                'Run "git submodule update --init" to get the recommended version.'
+              else
+                'Run "gem install listen" to get it.'
+              end
+            raise e
+          end
+        end
+      else
+        begin
+          require 'listen'
+        rescue LoadError => e
+          dir = Sass::Util.scope("vendor/listen/lib")
+          if $LOAD_PATH.include?(dir)
+            raise e unless File.exists?(scope(".git"))
+            e.message << "\n" <<
+              'Run "git submodule update --init" to get the recommended version.'
+          else
+            $LOAD_PATH.unshift dir
+            retry
+          end
+        end
+      end
+    end
+
     def update_stylesheet(filename, css)
       dir = File.dirname(css)
       unless File.exists?(dir)
@@ -318,18 +361,23 @@ module Sass::Plugin
         engine_opts = engine_options(:css_filename => css, :filename => filename)
         result = Sass::Engine.for_file(filename, engine_opts).render
       rescue Exception => e
+        compilation_error_occured = true
         run_compilation_error e, filename, css
         result = Sass::SyntaxError.exception_to_css(e, options)
       else
         run_updating_stylesheet filename, css
       end
 
-      # Finally, write the file
+      write_file(css, result)
+      run_updated_stylesheet(filename, css) unless compilation_error_occured
+    end
+
+    def write_file(css, content)
       flag = 'w'
       flag = 'wb' if Sass::Util.windows? && options[:unix_newlines]
       File.open(css, flag) do |file|
-        file.set_encoding(result.encoding) unless Sass::Util.ruby1_8?
-        file.print(result)
+        file.set_encoding(content.encoding) unless Sass::Util.ruby1_8?
+        file.print(content)
       end
     end
 

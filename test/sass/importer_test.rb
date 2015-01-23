@@ -5,7 +5,7 @@ require File.dirname(__FILE__) + '/test_helper'
 require 'sass/plugin'
 
 class ImporterTest < Test::Unit::TestCase
-
+  
   class FruitImporter < Sass::Importers::Base
     def find(name, context = nil)
       if name =~ %r{fruits/(\w+)(\.s[ac]ss)?}
@@ -176,10 +176,17 @@ CSS
       file_system_importer
     )
   end
+
   def fixture_dir
     File.join(File.dirname(__FILE__), "fixtures")
   end
+
   def fixture_file(path)
     File.join(fixture_dir, path)
+  end
+
+  def test_absolute_files_across_template_locations
+    importer = Sass::Importers::Filesystem.new(absolutize 'templates')
+    assert_not_nil importer.mtime(absolutize('more_templates/more1.sass'), {})
   end
 end

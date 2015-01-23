@@ -9,7 +9,9 @@ module Sass::Script
     require 'sass/script/number'
     require 'sass/script/color'
     require 'sass/script/bool'
+    require 'sass/script/null'
     require 'sass/script/list'
+    require 'sass/script/arg_list'
 
     # Returns the Ruby value of the literal.
     # The type of this value varies based on the subclass.
@@ -33,6 +35,11 @@ module Sass::Script
       []
     end
 
+    # @see Node#deep_copy
+    def deep_copy
+      dup
+    end
+
     # Returns the options hash for this node.
     #
     # @return [{Symbol => Object}]
@@ -48,26 +55,6 @@ The #options attribute is not set on this #{self.class}.
   on this literal within a custom Sass function without first
   setting the #option attribute.
 MSG
-    end
-
-    # The SassScript `and` operation.
-    #
-    # @param other [Literal] The right-hand side of the operator
-    # @return [Literal] The result of a logical and:
-    #   `other` if this literal isn't a false {Bool},
-    #   and this literal otherwise
-    def and(other)
-      to_bool ? other : self
-    end
-
-    # The SassScript `or` operation.
-    #
-    # @param other [Literal] The right-hand side of the operator
-    # @return [Literal] The result of the logical or:
-    #   this literal if it isn't a false {Bool},
-    #   and `other` otherwise
-    def or(other)
-      to_bool ? self : other
     end
 
     # The SassScript `==` operation.
@@ -101,24 +88,6 @@ MSG
     #   false otherwise
     def unary_not
       Sass::Script::Bool.new(!to_bool)
-    end
-
-    # The SassScript default operation (e.g. `$a $b`, `"foo" "bar"`).
-    #
-    # @param other [Literal] The right-hand side of the operator
-    # @return [Script::String] A string containing both literals
-    #   separated by a space
-    def space(other)
-      Sass::Script::String.new("#{self.to_s} #{other.to_s}")
-    end
-
-    # The SassScript `,` operation (e.g. `$a, $b`, `"foo", "bar"`).
-    #
-    # @param other [Literal] The right-hand side of the operator
-    # @return [Script::String] A string containing both literals
-    #   separated by `", "`
-    def comma(other)
-      Sass::Script::String.new("#{self.to_s},#{' ' unless options[:style] == :compressed}#{other.to_s}")
     end
 
     # The SassScript `=` operation
@@ -231,6 +200,13 @@ MSG
       raise Sass::SyntaxError.new("[BUG] All subclasses of Sass::Literal must implement #to_s.")
     end
     alias_method :to_sass, :to_s
+
+    # Returns whether or not this object is null.
+    #
+    # @return [Boolean] `false`
+    def null?
+      false
+    end
 
     protected
 

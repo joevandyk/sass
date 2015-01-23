@@ -14,7 +14,8 @@ module Sass
   # The nodes in this state are in the same structure as the Sass document:
   # rules and properties are nested beneath one another.
   # Nodes that can be in this state or in the dynamic state
-  # are called **static nodes**.
+  # are called **static nodes**; nodes that can only be in this state
+  # are called **solely static nodes**.
   #
   # {Tree::Visitors::Cssize} is then used to create a static CSS tree.
   # This is like a static Sass tree,
@@ -65,8 +66,7 @@ module Sass
       # @param options [{Symbol => Object}] The options
       # @see #options
       def options=(options)
-        children.each {|c| c.options = options}
-        @options = options
+        Sass::Tree::Visitors::SetOptions.visit(self, options)
       end
 
       # @private
@@ -133,25 +133,12 @@ module Sass
         Sass::Tree::Visitors::ToCss.visit(self)
       end
 
-      # Converts a static CSS tree (e.g. the output of \{Tree::Visitors::Cssize})
-      # into another static CSS tree,
-      # with the given extensions applied to all relevant {RuleNode}s.
+      # Returns a representation of the node for debugging purposes.
       #
-      # @todo Link this to the reference documentation on `@extend`
-      #   when such a thing exists.
-      #
-      # @param extends [Sass::Util::SubsetMap{Selector::Simple => Selector::Sequence}]
-      #   The extensions to perform on this tree
-      # @return [Tree::Node] The resulting tree of static CSS nodes.
-      # @raise [Sass::SyntaxError] Only if there's a programmer error
-      #   and this is not a static CSS tree
-      def do_extend(extends)
-        node = dup
-        node.children = children.map {|c| c.do_extend(extends)}
-        node
-      rescue Sass::SyntaxError => e
-        e.modify_backtrace(:filename => filename, :line => line)
-        raise e
+      # @return [String]
+      def inspect
+        return self.class.to_s unless has_children
+        "(#{self.class} #{children.map {|c| c.inspect}.join(' ')})"
       end
 
       # Iterates through each node in the tree rooted at this node
@@ -159,9 +146,9 @@ module Sass
       #
       # @yield node
       # @yieldparam node [Node] a node in the tree
-      def each(&block)
+      def each
         yield self
-        children.each {|c| c.each(&block)}
+        children.each {|c| c.each {|n| yield n}}
       end
 
       # Converts a node to Sass code that will generate it.
@@ -185,9 +172,14 @@ module Sass
       #
       # @return [Node]
       def deep_copy
-        node = dup
-        node.children = children.map {|c| c.deep_copy}
-        node
+        Sass::Tree::Visitors::DeepCopy.visit(self)
+      end
+
+      # Whether or not this node bubbles up through RuleNodes.
+      #
+      # @return [Boolean]
+      def bubbles?
+        false
       end
 
       protected

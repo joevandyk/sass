@@ -27,7 +27,7 @@ module Sass
 
       # Retrieved cached contents.
       # Must be implemented by all subclasses.
-      #
+      # 
       # Note: if the key exists but the sha or version have changed,
       # then the key may be deleted by the cache store, if it wants to do so.
       #
@@ -51,6 +51,7 @@ module Sass
         _store(key, Sass::VERSION, sha, Marshal.dump(root))
       rescue TypeError, LoadError => e
         Sass::Util.sass_warn "Warning. Error encountered while saving cache #{path_to(key)}: #{e}"
+        nil
       end
 
       # Retrieve a {Sass::Tree::RootNode}.
@@ -63,6 +64,7 @@ module Sass
         Marshal.load(contents) if contents
       rescue EOFError, TypeError, ArgumentError, LoadError => e
         Sass::Util.sass_warn "Warning. Error encountered while reading cache #{path_to(key)}: #{e}"
+        nil
       end
 
       # Return the key for the sass file.

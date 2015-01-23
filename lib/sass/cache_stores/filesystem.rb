@@ -1,3 +1,5 @@
+require 'fileutils'
+
 module Sass
   module CacheStores
     # A backend for the Sass cache using the filesystem.
@@ -15,7 +17,6 @@ module Sass
       # @see Base#\_retrieve
       def _retrieve(key, version, sha)
         return unless File.readable?(path_to(key))
-        contents = nil
         File.open(path_to(key), "rb") do |f|
           if f.readline("\n").strip == version && f.readline("\n").strip == sha
             return f.read
@@ -51,6 +52,7 @@ module Sass
       # @param key [String]
       # @return [String] The path to the cache file.
       def path_to(key)
+        key = key.gsub(/[<>:\\|?*%]/) {|c| "%%%03d" % Sass::Util.ord(c)}
         File.join(cache_location, key)
       end
     end

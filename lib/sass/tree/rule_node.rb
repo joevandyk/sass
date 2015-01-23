@@ -50,6 +50,13 @@ module Sass::Tree
     # @return [Boolean]
     attr_accessor :group_end
 
+    # The stack trace.
+    # This is only readable in a CSS tree as it is written during the perform step
+    # and only when the :trace_selectors option is set.
+    #
+    # @return [Array<String>]
+    attr_accessor :stack_trace
+
     # @param rule [Array<String, Sass::Script::Node>]
     #   The CSS rule. See \{#rule}
     def initialize(rule)
@@ -96,15 +103,6 @@ module Sass::Tree
       last.is_a?(String) && last[-1] == ?,
     end
 
-    # Extends this Rule's selector with the given `extends`.
-    #
-    # @see Node#do_extend
-    def do_extend(extends)
-      node = dup
-      node.resolved_rules = resolved_rules.do_extend(extends)
-      node
-    end
-
     # A hash that will be associated with this rule in the CSS document
     # if the {file:SASS_REFERENCE.md#debug_info-option `:debug_info` option} is enabled.
     # This data is used by e.g. [the FireSass Firebug extension](https://addons.mozilla.org/en-US/firefox/addon/103988).
@@ -115,14 +113,19 @@ module Sass::Tree
        :line => self.line}
     end
 
+    # A rule node is invisible if it has only placeholder selectors.
+    def invisible?
+      resolved_rules.members.all? {|seq| seq.has_placeholder?}
+    end
+
     private
 
     def try_to_parse_non_interpolated_rules
       if @rule.all? {|t| t.kind_of?(String)}
         # We don't use real filename/line info because we don't have it yet.
         # When we get it, we'll set it on the parsed rules if possible.
-        parser = Sass::SCSS::StaticParser.new(@rule.join.strip, 1)
-        @parsed_rules = parser.parse_selector('') rescue nil
+        parser = Sass::SCSS::StaticParser.new(@rule.join.strip, '', 1)
+        @parsed_rules = parser.parse_selector rescue nil
       end
     end
   end

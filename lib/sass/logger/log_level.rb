@@ -31,17 +31,16 @@ module Sass
             level = log_levels.values.max
             level = level.nil? ? 0 : level + 1
           end
-          # (require 'ruby-debug'; debugger)
           log_levels.update(name => level)
           define_logger(name)
         end
 
         def define_logger(name, options = {})
-          class_eval %Q{
+          class_eval <<-RUBY, __FILE__, __LINE__ + 1
             def #{name}(message)
               #{options.fetch(:to, :log)}(#{name.inspect}, message)
             end
-          }
+          RUBY
         end
       end
       

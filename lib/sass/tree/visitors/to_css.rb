@@ -53,36 +53,28 @@ class Sass::Tree::Visitors::ToCss < Sass::Tree::Visitors::Base
 
   def visit_charset(node)
     "@charset \"#{node.name}\";"
-  end
+  end 
 
   def visit_comment(node)
     return if node.invisible?
-    spaces = ('  ' * [@tabs - node.value[/^ */].size, 0].max)
+    spaces = ('  ' * [@tabs - node.resolved_value[/^ */].size, 0].max)
 
-    content = node.value.gsub(/^/, spaces).gsub(%r{^(\s*)//(.*)$}) do |md|
-      "#{$1}/*#{$2} */"
-    end
-    if content =~ /[^\\]\#\{.*\}/
-      Sass::Util.sass_warn <<MESSAGE
-WARNING:
-On line #{node.line}#{" of '#{node.filename}'" if node.filename}
-Comments will evaluate the contents of interpolations (\#{ ... }) in Sass 3.2.
-Please escape the interpolation by adding a backslash before the hash sign.
-MESSAGE
-    elsif content =~ /\\\#\{.*\}/
-      content.gsub!(/\\(\#\{.*\})/, '\1')
-    end
-    content.gsub!(/\n +(\* *(?!\/))?/, ' ') if (node.style == :compact || node.style == :compressed) && !node.loud
+    content = node.resolved_value.gsub(/^/, spaces)
+    content.gsub!(%r{^(\s*)//(.*)$}) {|md| "#{$1}/*#{$2} */"} if node.type == :silent
+    content.gsub!(/\n +(\* *(?!\/))?/, ' ') if (node.style == :compact || node.style == :compressed) && node.type != :loud
     content
   end
 
   def visit_directive(node)
-    return node.value + ";" unless node.has_children
-    return node.value + " {}" if node.children.empty?
+    was_in_directive = @in_directive
+    tab_str = '  ' * @tabs
+    return tab_str + node.resolved_value + ";" unless node.has_children
+    return tab_str + node.resolved_value + " {}" if node.children.empty?
+    @in_directive = @in_directive || !node.is_a?(Sass::Tree::MediaNode)
     result = if node.style == :compressed
-               "#{node.value}{"
+               "#{node.resolved_value}{"
              else
-               "#{'  ' * @tabs}#{node.value} {" + (node.style == :compact ? ' ' : "\n")
+               "#{tab_str}#{node.resolved_value} {" + (node.style == :compact ? ' ' : "\n")
              end
     was_prop = false
     first = true
@@ -111,6 +103,8 @@ MESSAGE
                     else
                       (node.style == :expanded ? "\n" : " ") + "}\n"
                     end
+  ensure
+    @in_directive = was_in_directive
   end
 
   def visit_media(node)
@@ -119,7 +113,16 @@ MESSAGE
     str
   end
 
+  def visit_supports(node)
+    visit_media(node)
+  end
+
+  def visit_cssimport(node)
+    visit_directive(node)
+  end
+
   def visit_prop(node)
+    return if node.resolved_value.empty?
     tab_str = '  ' * (@tabs + node.tabs)
     if node.style == :compressed
       "#{tab_str}#{node.resolved_name}:#{node.resolved_value}"
@@ -141,10 +144,15 @@ MESSAGE
       per_rule_indent, total_indent = [:nested, :expanded].include?(node.style) ? [rule_indent, ''] : ['', rule_indent]
 
       joined_rules = node.resolved_rules.members.map do |seq|
+        next if seq.has_placeholder?
         rule_part = seq.to_a.join
-        rule_part.gsub!(/\s*([^,])\s*\n\s*/m, '\1 ') if node.style == :compressed
+        if node.style == :compressed
+          rule_part.gsub!(/([^,])\s*\n\s*/m, '\1 ')
+          rule_part.gsub!(/\s*([,+>])\s*/m, '\1')
+          rule_part.strip!
+        end
         rule_part
-      end.join(rule_separator)
+      end.compact.join(rule_separator)
 
       joined_rules.sub!(/\A\s*/, per_rule_indent)
       joined_rules.gsub!(/\s*\n\s*/, "#{line_separator}#{per_rule_indent}")
@@ -154,8 +162,12 @@ MESSAGE
       old_spaces = '  ' * @tabs
       spaces = '  ' * (@tabs + 1)
       if node.style != :compressed
-        if node.options[:debug_info]
+        if node.options[:debug_info] && !@in_directive
           to_return << visit(debug_info_rule(node.debug_info, node.options)) << "\n"
+        elsif node.options[:trace_selectors]
+          to_return << "#{old_spaces}/* "
+          to_return << node.stack_trace.join("\n   #{old_spaces}")
+          to_return << " */\n"
         elsif node.options[:line_comments]
           to_return << "#{old_spaces}/* line #{node.line}"
 
@@ -195,16 +207,17 @@ MESSAGE
   private
 
   def debug_info_rule(debug_info, options)
-    node = Sass::Tree::DirectiveNode.new("@media -sass-debug-info")
-    debug_info.map {|k, v| [k.to_s, v.to_s]}.sort.each do |k, v|
+    node = Sass::Tree::DirectiveNode.resolved("@media -sass-debug-info")
+    Sass::Util.hash_to_a(debug_info.map {|k, v| [k.to_s, v.to_s]}).each do |k, v|
       rule = Sass::Tree::RuleNode.new([""])
       rule.resolved_rules = Sass::Selector::CommaSequence.new(
         [Sass::Selector::Sequence.new(
             [Sass::Selector::SimpleSequence.new(
-                [Sass::Selector::Element.new(k.to_s.gsub(/[^\w-]/, "\\\\\\0"), nil)])
+                [Sass::Selector::Element.new(k.to_s.gsub(/[^\w-]/, "\\\\\\0"), nil)],
+                false)
             ])
         ])
-      prop = Sass::Tree::PropNode.new([""], "", :new)
+      prop = Sass::Tree::PropNode.new([""], Sass::Script::String.new(''), :new)
       prop.resolved_name = "font-family"
       prop.resolved_value = Sass::SCSS::RX.escape_ident(v.to_s)
       rule << prop
