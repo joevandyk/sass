@@ -289,44 +289,7 @@ module Sass::Plugin
     # @option options [Boolean] :skip_initial_update
     #   Don't do an initial update when starting the watcher when true
     def watch(individual_files = [], options = {})
-      @inferred_directories = []
-      options, individual_files = individual_files, [] if individual_files.is_a?(Hash)
-      update_stylesheets(individual_files) unless options[:skip_initial_update]
-
-      directories = watched_paths
-      individual_files.each do |(source, _, _)|
-        source = File.expand_path(source)
-        @watched_files << Sass::Util.realpath(source).to_s
-        @inferred_directories << File.dirname(source)
-      end
-
-      directories += @inferred_directories
-      directories = remove_redundant_directories(directories)
-
-      # TODO: Keep better track of what depends on what
-      # so we don't have to run a global update every time anything changes.
-      # XXX The :additional_watch_paths option exists for Compass to use until
-      # a deprecated feature is removed. It may be removed without warning.
-      directories += Array(options[:additional_watch_paths])
-
-      options = {
-        :relative_paths => false,
-        # The native windows listener is much slower than the polling option, according to
-        # https://github.com/nex3/sass/commit/a3031856b22bc834a5417dedecb038b7be9b9e3e
-        :force_polling => @options[:poll] || Sass::Util.windows?
-      }
-
-      listener = create_listener(*directories, options) do |modified, added, removed|
-        on_file_changed(individual_files, modified, added, removed)
-        yield(modified, added, removed) if block_given?
-      end
-
-      begin
-        listener.start
-        sleep
-      rescue Interrupt
-        # Squelch Interrupt for clean exit from Listen::Listener
-      end
+      raise "watch functionality disabled"
     end
 
     # Non-destructively modifies \{#options} so that default values are properly set,
@@ -377,8 +340,6 @@ module Sass::Plugin
 
     # This is mocked out in compiler_test.rb.
     def create_listener(*args, &block)
-      require 'sass-listen'
-      SassListen.to(*args, &block)
     end
 
     def remove_redundant_directories(directories)
